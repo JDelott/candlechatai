@@ -1,6 +1,10 @@
+import { getServerSession } from "next-auth"
+import Link from "next/link"
 
 
-export default function Home() {
+export default async function Home() {
+  const session = await getServerSession()
+
   return (
     <div className="min-h-screen bg-white dark:bg-black">
       <main className="max-w-5xl mx-auto px-4 py-24">
@@ -16,17 +20,34 @@ export default function Home() {
             <p className="font-mono text-lg text-gray-600 dark:text-gray-400 max-w-md">
               Decode market patterns through AI-powered conversations about candlestick analysis
             </p>
-            <div className="flex gap-4">
-              <button className="bg-black dark:bg-white text-white dark:text-black px-8 py-3 font-mono hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors">
-                Start Chat
-              </button>
-              <button className="border-2 border-black dark:border-white px-8 py-3 font-mono hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors">
-                Learn More
-              </button>
+            <div className="flex flex-wrap gap-4">
+              {session ? (
+                <Link
+                  href="/dashboard"
+                  className="bg-black dark:bg-white text-white dark:text-black px-8 py-3 font-mono hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
+                >
+                  Go to Dashboard
+                </Link>
+              ) : (
+                <>
+                  <Link
+                    href="/login"
+                    className="bg-black dark:bg-white text-white dark:text-black px-8 py-3 font-mono hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
+                  >
+                    Sign In
+                  </Link>
+                  <Link
+                    href="/register"
+                    className="border-2 border-black dark:border-white px-8 py-3 font-mono hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors"
+                  >
+                    Register
+                  </Link>
+                </>
+              )}
             </div>
           </div>
 
-          {/* Right Content */}
+          {/* Right Content - Candlestick Grid */}
           <div className="relative aspect-square">
             <div className="absolute inset-0 grid grid-cols-3 gap-4">
               {[...Array(9)].map((_, i) => (
@@ -45,5 +66,5 @@ export default function Home() {
         </div>
       </main>
     </div>
-  );
+  )
 }
