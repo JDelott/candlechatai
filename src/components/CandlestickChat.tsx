@@ -1,19 +1,28 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { createChart, IChartApi, ISeriesApi, LineStyle, SeriesOptionsMap } from 'lightweight-charts'
+import {
+  IChartApi,
+  ISeriesApi,
+  createChart,
+  SeriesOptionsMap,
+  
+  LineStyle,
+  Time
+} from 'lightweight-charts'
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
 }
 
-interface CandleData {
-  time: string
-  open: number
-  high: number
-  low: number
-  close: number
+type CandleData = {
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
 }
 
 interface IndicatorState {
@@ -37,6 +46,13 @@ interface BollingerBandsData {
   lower: number | null
 }
 
+// Update the series ref type
+type SeriesRefs = {
+  candlestick: ISeriesApi<'Candlestick', Time> | null;
+  line: ISeriesApi<'Line', Time> | null;
+  area: ISeriesApi<'Area', Time> | null;
+}
+
 export function CandlestickChat() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -48,7 +64,11 @@ export function CandlestickChat() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<Array<{symbol: string, name: string}>>([])
   const chartRef = useRef<IChartApi | null>(null)
-  const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null)
+  const seriesRef = useRef<SeriesRefs>({
+    candlestick: null,
+    line: null,
+    area: null
+  })
   const [currentStockName, setCurrentStockName] = useState('Apple Inc.')
   const [timeframe, setTimeframe] = useState('1Y')
   const [isLoading, setIsLoading] = useState(false)
@@ -60,19 +80,20 @@ export function CandlestickChat() {
     bollinger: { enabled: false, period: 20 }
   })
   const indicatorSeriesRefs = useRef<{
-    ma?: ISeriesApi<'Line'>
-    rsi?: ISeriesApi<'Line'>
+    ma?: ISeriesApi<'Line', Time>
+    rsi?: ISeriesApi<'Line', Time>
     macd?: {
-      macd?: ISeriesApi<'Line'>
-      signal?: ISeriesApi<'Line'>
-      histogram?: ISeriesApi<'Histogram'>
+      macd?: ISeriesApi<'Line', Time>
+      signal?: ISeriesApi<'Line', Time>
+      histogram?: ISeriesApi<'Histogram', Time>
     }
     bollinger?: {
-      upper?: ISeriesApi<'Line'>
-      middle?: ISeriesApi<'Line'>
-      lower?: ISeriesApi<'Line'>
+      upper?: ISeriesApi<'Line', Time>
+      middle?: ISeriesApi<'Line', Time>
+      lower?: ISeriesApi<'Line', Time>
     }
   }>({})
+  const [chartStyle, setChartStyle] = useState<'candlestick' | 'line' | 'area'>('candlestick')
 
   const fetchStockData = useCallback(async () => {
     setIsLoading(true)
@@ -126,14 +147,15 @@ export function CandlestickChat() {
         open: quote.open[i],
         high: quote.high[i],
         low: quote.low[i],
-        close: quote.close[i]
+        close: quote.close[i],
+        volume: quote.volume[i]
       })).filter((candle: CandleData) => 
         candle.open && candle.high && candle.low && candle.close
       )
 
       setChartData(candleData)
-      if (candlestickSeriesRef.current) {
-        candlestickSeriesRef.current.setData(candleData)
+      if (seriesRef.current.candlestick) {
+        seriesRef.current.candlestick.setData(candleData)
       }
     } catch (error) {
       console.error('Error fetching stock data:', error)
@@ -155,7 +177,6 @@ export function CandlestickChat() {
       height: chartContainerRef.current.clientHeight,
     })
     
-    // Add resize observer
     const resizeObserver = new ResizeObserver(entries => {
       if (entries[0].target === chartContainerRef.current) {
         chart.applyOptions({
@@ -166,25 +187,83 @@ export function CandlestickChat() {
     })
 
     resizeObserver.observe(chartContainerRef.current)
-    
-    const candlestickSeries = chart.addCandlestickSeries({
-      upColor: '#26a69a',
-      downColor: '#ef5350',
-      borderVisible: false,
-      wickUpColor: '#26a69a',
-      wickDownColor: '#ef5350'
-    })
+
+    // Create new series based on chartStyle
+    switch (chartStyle) {
+      case 'line': {
+        const series = chart.addLineSeries({
+          color: '#2962FF',
+          lineWidth: 2,
+        })
+        if (chartData.length) {
+          series.setData(chartData.map(d => ({
+            time: d.time,
+            value: d.close
+          })))
+        }
+        seriesRef.current = {
+          candlestick: null,
+          line: series,
+          area: null
+        }
+        break
+      }
+      
+      case 'area': {
+        const series = chart.addAreaSeries({
+          topColor: 'rgba(41, 98, 255, 0.3)',
+          bottomColor: 'rgba(41, 98, 255, 0)',
+          lineColor: '#2962FF',
+          lineWidth: 2,
+        })
+        if (chartData.length) {
+          series.setData(chartData.map(d => ({
+            time: d.time,
+            value: d.close
+          })))
+        }
+        seriesRef.current = {
+          candlestick: null,
+          line: null,
+          area: series
+        }
+        break
+      }
+      
+      default: { // candlestick
+        const series = chart.addCandlestickSeries({
+          upColor: '#26a69a',
+          downColor: '#ef5350',
+          borderVisible: false,
+          wickUpColor: '#26a69a',
+          wickDownColor: '#ef5350'
+        })
+        if (chartData.length) {
+          series.setData(chartData)
+        }
+        seriesRef.current = {
+          candlestick: series,
+          line: null,
+          area: null
+        }
+      }
+    }
 
     chartRef.current = chart
-    candlestickSeriesRef.current = candlestickSeries
-
-    fetchStockData()
 
     return () => {
       resizeObserver.disconnect()
-      chart.remove()
+      if (chartRef.current) {
+        chartRef.current.remove()
+        chartRef.current = null
+        seriesRef.current = {
+          candlestick: null,
+          line: null,
+          area: null
+        }
+      }
     }
-  }, [fetchStockData])
+  }, [chartStyle, chartData])
 
   useEffect(() => {
     fetchStockData()
@@ -649,14 +728,32 @@ export function CandlestickChat() {
           {/* Chart Type */}
           <div>
             <label className="block text-sm font-medium mb-2">Chart Style</label>
-            <select 
-              className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600"
-              defaultValue="candlestick"
-            >
-              <option value="candlestick">Candlestick</option>
-              <option value="line">Line</option>
-              <option value="area">Area</option>
-            </select>
+            <div className="relative">
+              <select 
+                className="w-full px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 [&>*]:bg-white [&>*]:dark:bg-gray-800"
+                value={chartStyle}
+                onChange={(e) => setChartStyle(e.target.value as 'candlestick' | 'line' | 'area')}
+                style={{
+                  WebkitAppearance: 'none',
+                  MozAppearance: 'none'
+                }}
+              >
+                <option value="candlestick" className="px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-700">
+                  Candlestick Chart
+                </option>
+                <option value="line" className="px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-700">
+                  Line Chart
+                </option>
+                <option value="area" className="px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-700">
+                  Area Chart
+                </option>
+              </select>
+              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500 dark:text-gray-400">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -798,29 +895,42 @@ export function CandlestickChat() {
 
       {/* Main Chart Panel - Enhanced */}
       <div className="col-span-7 bg-white dark:bg-gray-800 rounded-xl shadow-lg flex flex-col">
-        {/* New Quick Stats Bar */}
-        <div className="grid grid-cols-5 gap-4 p-4 border-b border-gray-100 dark:border-gray-700">
-          <div className="text-center">
-            <div className="text-sm text-gray-500 dark:text-gray-400">Open</div>
-            <div className="font-semibold">$178.23</div>
+        {/* Quick Stats Bar */}
+        {chartData.length > 0 && (
+          <div className="grid grid-cols-5 gap-4 p-4 border-b border-gray-100 dark:border-gray-700">
+            <div className="text-center">
+              <div className="text-sm text-gray-500 dark:text-gray-400">Open</div>
+              <div className="font-semibold">${chartData[chartData.length - 1].open.toFixed(2)}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-sm text-gray-500 dark:text-gray-400">High</div>
+              <div className="font-semibold text-green-500">${chartData[chartData.length - 1].high.toFixed(2)}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-sm text-gray-500 dark:text-gray-400">Low</div>
+              <div className="font-semibold text-red-500">${chartData[chartData.length - 1].low.toFixed(2)}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-sm text-gray-500 dark:text-gray-400">Volume</div>
+              <div className="font-semibold">{(chartData[chartData.length - 1].volume / 1000000).toFixed(1)}M</div>
+            </div>
+            <div className="text-center">
+              <div className="text-sm text-gray-500 dark:text-gray-400">Change</div>
+              {(() => {
+                const current = chartData[chartData.length - 1].close
+                const previous = chartData[chartData.length - 2]?.close || current
+                const change = current - previous
+                const percentChange = (change / previous) * 100
+                const isPositive = change >= 0
+                return (
+                  <div className={`font-semibold ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                    {isPositive ? '+' : ''}{change.toFixed(2)} ({isPositive ? '+' : ''}{percentChange.toFixed(2)}%)
+                  </div>
+                )
+              })()}
+            </div>
           </div>
-          <div className="text-center">
-            <div className="text-sm text-gray-500 dark:text-gray-400">High</div>
-            <div className="font-semibold text-green-500">$180.54</div>
-          </div>
-          <div className="text-center">
-            <div className="text-sm text-gray-500 dark:text-gray-400">Low</div>
-            <div className="font-semibold text-red-500">$176.89</div>
-          </div>
-          <div className="text-center">
-            <div className="text-sm text-gray-500 dark:text-gray-400">Volume</div>
-            <div className="font-semibold">2.3M</div>
-          </div>
-          <div className="text-center">
-            <div className="text-sm text-gray-500 dark:text-gray-400">Change</div>
-            <div className="font-semibold text-green-500">+2.34%</div>
-          </div>
-        </div>
+        )}
 
         {/* Existing Chart Header */}
         <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
