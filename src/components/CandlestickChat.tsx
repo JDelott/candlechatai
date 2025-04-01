@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { createChart, IChartApi, ISeriesApi } from 'lightweight-charts'
+import { createChart, IChartApi, ISeriesApi, LineStyle, SeriesOptionsMap } from 'lightweight-charts'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -14,6 +14,27 @@ interface CandleData {
   high: number
   low: number
   close: number
+}
+
+interface IndicatorState {
+  enabled: boolean
+  period?: number
+  type?: 'sma' | 'ema'
+}
+
+interface Indicators {
+  ma: IndicatorState & { type: 'sma' | 'ema' }
+  rsi: IndicatorState
+  macd: IndicatorState
+  bollinger: IndicatorState
+}
+
+// Add interface for Bollinger Bands data
+interface BollingerBandsData {
+  time: string
+  upper: number | null
+  middle: number | null
+  lower: number | null
 }
 
 export function CandlestickChat() {
@@ -32,6 +53,26 @@ export function CandlestickChat() {
   const [timeframe, setTimeframe] = useState('1Y')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [indicators, setIndicators] = useState<Indicators>({
+    ma: { enabled: false, period: 20, type: 'sma' },
+    rsi: { enabled: false, period: 14 },
+    macd: { enabled: false },
+    bollinger: { enabled: false, period: 20 }
+  })
+  const indicatorSeriesRefs = useRef<{
+    ma?: ISeriesApi<'Line'>
+    rsi?: ISeriesApi<'Line'>
+    macd?: {
+      macd?: ISeriesApi<'Line'>
+      signal?: ISeriesApi<'Line'>
+      histogram?: ISeriesApi<'Histogram'>
+    }
+    bollinger?: {
+      upper?: ISeriesApi<'Line'>
+      middle?: ISeriesApi<'Line'>
+      lower?: ISeriesApi<'Line'>
+    }
+  }>({})
 
   const fetchStockData = useCallback(async () => {
     setIsLoading(true)
@@ -234,6 +275,223 @@ export function CandlestickChat() {
     setSearchResults([])
   }
 
+  const updateIndicators = useCallback(() => {
+    if (!chartData.length || !chartRef.current) {
+      console.log('No chart data or chart ref')
+      return
+    }
+
+    console.log('Updating indicators:', indicators)
+
+    // Helper function to safely remove series
+    const removeSeries = (series: ISeriesApi<keyof SeriesOptionsMap> | undefined) => {
+      if (series && chartRef.current) {
+        try {
+          chartRef.current.removeSeries(series)
+        } catch (error) {
+          console.warn('Error removing series:', error)
+        }
+      }
+    }
+
+    // Clear existing indicators
+    const clearExistingIndicators = () => {
+      // Clear MA
+      if (indicatorSeriesRefs.current.ma) {
+        removeSeries(indicatorSeriesRefs.current.ma)
+        indicatorSeriesRefs.current.ma = undefined
+      }
+
+      // Clear RSI
+      if (indicatorSeriesRefs.current.rsi) {
+        removeSeries(indicatorSeriesRefs.current.rsi)
+        indicatorSeriesRefs.current.rsi = undefined
+      }
+
+      // Clear MACD
+      if (indicatorSeriesRefs.current.macd) {
+        if (indicatorSeriesRefs.current.macd.macd) {
+          removeSeries(indicatorSeriesRefs.current.macd.macd)
+        }
+        if (indicatorSeriesRefs.current.macd.signal) {
+          removeSeries(indicatorSeriesRefs.current.macd.signal)
+        }
+        if (indicatorSeriesRefs.current.macd.histogram) {
+          removeSeries(indicatorSeriesRefs.current.macd.histogram)
+        }
+        indicatorSeriesRefs.current.macd = undefined
+      }
+
+      // Clear Bollinger Bands
+      if (indicatorSeriesRefs.current.bollinger) {
+        if (indicatorSeriesRefs.current.bollinger.upper) {
+          removeSeries(indicatorSeriesRefs.current.bollinger.upper)
+        }
+        if (indicatorSeriesRefs.current.bollinger.middle) {
+          removeSeries(indicatorSeriesRefs.current.bollinger.middle)
+        }
+        if (indicatorSeriesRefs.current.bollinger.lower) {
+          removeSeries(indicatorSeriesRefs.current.bollinger.lower)
+        }
+        indicatorSeriesRefs.current.bollinger = undefined
+      }
+    }
+
+    // Clear existing indicators first
+    clearExistingIndicators()
+
+    const calculateSMA = (data: CandleData[], period: number) => {
+      return data.map((candle, index) => {
+        if (index < period - 1) return { time: candle.time, value: null }
+        const sum = data.slice(index - period + 1, index + 1).reduce((acc, curr) => acc + curr.close, 0)
+        return { time: candle.time, value: sum / period }
+      }).filter(item => item.value !== null)
+    }
+
+    const calculateEMA = (data: CandleData[], period: number) => {
+      const multiplier = 2 / (period + 1)
+      let ema = data[0].close
+      return data.map((candle) => {
+        ema = (candle.close - ema) * multiplier + ema
+        return { time: candle.time, value: ema }
+      })
+    }
+
+    const calculateRSI = (data: CandleData[], period: number) => {
+      let gains = 0
+      let losses = 0
+      const rsiData = []
+
+      for (let i = 1; i < data.length; i++) {
+        const difference = data[i].close - data[i - 1].close
+        if (difference > 0) gains += difference
+        else losses -= difference
+
+        if (i >= period) {
+          const avgGain = gains / period
+          const avgLoss = losses / period
+          const rs = avgGain / avgLoss
+          const rsi = 100 - (100 / (1 + rs))
+          rsiData.push({ time: data[i].time, value: rsi })
+
+          gains -= (data[i - period + 1].close - data[i - period].close > 0) 
+            ? data[i - period + 1].close - data[i - period].close 
+            : 0
+          losses -= (data[i - period + 1].close - data[i - period].close < 0) 
+            ? data[i - period].close - data[i - period + 1].close 
+            : 0
+        }
+      }
+      return rsiData
+    }
+
+    const calculateBollingerBands = (data: CandleData[], period: number): BollingerBandsData[] => {
+      const sma = calculateSMA(data, period)
+      return data.map((candle, index) => {
+        if (index < period - 1) {
+          return {
+            time: candle.time,
+            upper: null,
+            middle: null,
+            lower: null
+          }
+        }
+
+        const slice = data.slice(index - period + 1, index + 1)
+        const middle = sma[index - period + 1]?.value // Account for filtered SMA data
+        if (!middle) return { time: candle.time, upper: null, middle: null, lower: null }
+
+        const standardDeviation = Math.sqrt(
+          slice.reduce((acc, curr) => acc + Math.pow(curr.close - middle, 2), 0) / period
+        )
+
+        return {
+          time: candle.time,
+          upper: middle + (2 * standardDeviation),
+          middle: middle,
+          lower: middle - (2 * standardDeviation)
+        }
+      }).filter(item => item.upper !== null && item.middle !== null && item.lower !== null)
+    }
+
+    // Moving Average
+    if (indicators.ma.enabled) {
+      console.log('Adding MA indicator')
+      const maData = indicators.ma.type === 'sma' 
+        ? calculateSMA(chartData, indicators.ma.period!)
+        : calculateEMA(chartData, indicators.ma.period!)
+      
+      indicatorSeriesRefs.current.ma = chartRef.current.addLineSeries({
+        color: '#2962FF',
+        lineWidth: 2,
+        title: `${indicators.ma.type.toUpperCase()}(${indicators.ma.period})`
+      })
+      indicatorSeriesRefs.current.ma.setData(maData)
+    }
+
+    // RSI
+    if (indicators.rsi.enabled) {
+      console.log('Adding RSI indicator')
+      const rsiData = calculateRSI(chartData, indicators.rsi.period!)
+      indicatorSeriesRefs.current.rsi = chartRef.current.addLineSeries({
+        color: '#E91E63',
+        lineWidth: 2,
+        title: `RSI(${indicators.rsi.period})`
+      })
+      indicatorSeriesRefs.current.rsi.setData(rsiData)
+    }
+
+    // Bollinger Bands
+    if (indicators.bollinger.enabled) {
+      console.log('Adding Bollinger Bands')
+      const bbands = calculateBollingerBands(chartData, indicators.bollinger.period!)
+      
+      const upperSeries = chartRef.current.addLineSeries({
+        color: '#9C27B0',
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        title: 'BB Upper'
+      })
+
+      const middleSeries = chartRef.current.addLineSeries({
+        color: '#9C27B0',
+        lineWidth: 1,
+        title: 'BB Middle'
+      })
+
+      const lowerSeries = chartRef.current.addLineSeries({
+        color: '#9C27B0',
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        title: 'BB Lower'
+      })
+
+      indicatorSeriesRefs.current.bollinger = {
+        upper: upperSeries,
+        middle: middleSeries,
+        lower: lowerSeries
+      }
+
+      // Type-safe mapping of Bollinger Bands data
+      upperSeries.setData(bbands.map((b: BollingerBandsData) => ({ 
+        time: b.time, 
+        value: b.upper as number 
+      })))
+      middleSeries.setData(bbands.map((b: BollingerBandsData) => ({ 
+        time: b.time, 
+        value: b.middle as number 
+      })))
+      lowerSeries.setData(bbands.map((b: BollingerBandsData) => ({ 
+        time: b.time, 
+        value: b.lower as number 
+      })))
+    }
+  }, [chartData, indicators])
+
+  useEffect(() => {
+    updateIndicators()
+  }, [indicators, updateIndicators])
+
   return (
     <div className="grid grid-cols-12 gap-4 h-[calc(100vh-4rem)] p-4 bg-gray-50 dark:bg-gray-900">
       {/* Analysis Parameters Panel - Enhanced */}
@@ -314,24 +572,110 @@ export function CandlestickChat() {
         <div className="p-4 border-t border-gray-100 dark:border-gray-700">
           <h3 className="text-sm font-medium mb-3">Technical Indicators</h3>
           <div className="space-y-3">
+            {/* Moving Average */}
             <div className="flex items-center justify-between">
               <label className="text-sm">Moving Average</label>
-              <select className="text-sm bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 px-2 py-1">
-                <option value="sma">SMA</option>
-                <option value="ema">EMA</option>
-              </select>
+              <div className="flex items-center gap-2">
+                <select 
+                  className="text-sm bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 px-2 py-1"
+                  value={indicators.ma.type}
+                  onChange={(e) => {
+                    setIndicators(prev => ({
+                      ...prev,
+                      ma: { ...prev.ma, type: e.target.value as 'sma' | 'ema' }
+                    }))
+                  }}
+                >
+                  <option value="sma">SMA</option>
+                  <option value="ema">EMA</option>
+                </select>
+                <input
+                  type="number"
+                  min="1"
+                  max="200"
+                  value={indicators.ma.period}
+                  onChange={(e) => {
+                    setIndicators(prev => ({
+                      ...prev,
+                      ma: { ...prev.ma, period: parseInt(e.target.value) }
+                    }))
+                  }}
+                  className="w-16 text-sm bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 px-2 py-1"
+                />
+                <input 
+                  type="checkbox"
+                  checked={indicators.ma.enabled}
+                  onChange={(e) => {
+                    setIndicators(prev => ({
+                      ...prev,
+                      ma: { ...prev.ma, enabled: e.target.checked }
+                    }))
+                  }}
+                  className="toggle toggle-sm"
+                />
+              </div>
             </div>
+
+            {/* RSI */}
             <div className="flex items-center justify-between">
               <label className="text-sm">RSI</label>
-              <input type="checkbox" className="toggle toggle-sm" />
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={indicators.rsi.period}
+                  onChange={(e) => {
+                    setIndicators(prev => ({
+                      ...prev,
+                      rsi: { ...prev.rsi, period: parseInt(e.target.value) }
+                    }))
+                  }}
+                  className="w-16 text-sm bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 px-2 py-1"
+                />
+                <input 
+                  type="checkbox"
+                  checked={indicators.rsi.enabled}
+                  onChange={(e) => {
+                    setIndicators(prev => ({
+                      ...prev,
+                      rsi: { ...prev.rsi, enabled: e.target.checked }
+                    }))
+                  }}
+                  className="toggle toggle-sm"
+                />
+              </div>
             </div>
-            <div className="flex items-center justify-between">
-              <label className="text-sm">MACD</label>
-              <input type="checkbox" className="toggle toggle-sm" />
-            </div>
+
+            {/* Bollinger Bands */}
             <div className="flex items-center justify-between">
               <label className="text-sm">Bollinger Bands</label>
-              <input type="checkbox" className="toggle toggle-sm" />
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={indicators.bollinger.period}
+                  onChange={(e) => {
+                    setIndicators(prev => ({
+                      ...prev,
+                      bollinger: { ...prev.bollinger, period: parseInt(e.target.value) }
+                    }))
+                  }}
+                  className="w-16 text-sm bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 px-2 py-1"
+                />
+                <input 
+                  type="checkbox"
+                  checked={indicators.bollinger.enabled}
+                  onChange={(e) => {
+                    setIndicators(prev => ({
+                      ...prev,
+                      bollinger: { ...prev.bollinger, enabled: e.target.checked }
+                    }))
+                  }}
+                  className="toggle toggle-sm"
+                />
+              </div>
             </div>
           </div>
         </div>
