@@ -29,25 +29,51 @@ export function CandlestickChat() {
   const chartRef = useRef<IChartApi | null>(null)
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null)
   const [currentStockName, setCurrentStockName] = useState('Apple Inc.')
+  const [timeframe, setTimeframe] = useState('1Y')
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const fetchStockData = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
     try {
       const endDate = Math.floor(Date.now() / 1000)
-      const startDate = endDate - (365 * 24 * 60 * 60) // 1 year of data
+      let startDate = endDate
+
+      // Calculate start date based on timeframe
+      switch (timeframe) {
+        case '1W':
+          startDate = endDate - (7 * 24 * 60 * 60)
+          break
+        case '1M':
+          startDate = endDate - (30 * 24 * 60 * 60)
+          break
+        case '3M':
+          startDate = endDate - (90 * 24 * 60 * 60)
+          break
+        case '6M':
+          startDate = endDate - (180 * 24 * 60 * 60)
+          break
+        case '1Y':
+          startDate = endDate - (365 * 24 * 60 * 60)
+          break
+        case 'ALL':
+          startDate = 0 // Get all available data
+          break
+      }
       
       const response = await fetch(
         `/api/stock/chart?symbol=${symbol}&startDate=${startDate}&endDate=${endDate}`
       )
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        throw new Error('Failed to fetch stock data')
       }
 
       const data = await response.json()
 
       if (!data.chart?.result?.[0]?.indicators?.quote?.[0]) {
-        console.error('Invalid response:', data)
-        return
+        throw new Error('Invalid data format received')
       }
 
       const quotes = data.chart.result[0]
@@ -70,8 +96,11 @@ export function CandlestickChat() {
       }
     } catch (error) {
       console.error('Error fetching stock data:', error)
+      setError('Failed to load stock data. Please try again.')
+    } finally {
+      setIsLoading(false)
     }
-  }, [symbol])
+  }, [symbol, timeframe])
 
   useEffect(() => {
     if (!chartContainerRef.current) return
@@ -82,8 +111,20 @@ export function CandlestickChat() {
         textColor: 'black',
       },
       width: chartContainerRef.current.clientWidth,
-      height: 300
+      height: chartContainerRef.current.clientHeight,
     })
+    
+    // Add resize observer
+    const resizeObserver = new ResizeObserver(entries => {
+      if (entries[0].target === chartContainerRef.current) {
+        chart.applyOptions({
+          width: chartContainerRef.current.clientWidth,
+          height: chartContainerRef.current.clientHeight,
+        })
+      }
+    })
+
+    resizeObserver.observe(chartContainerRef.current)
     
     const candlestickSeries = chart.addCandlestickSeries({
       upColor: '#26a69a',
@@ -99,6 +140,7 @@ export function CandlestickChat() {
     fetchStockData()
 
     return () => {
+      resizeObserver.disconnect()
       chart.remove()
     }
   }, [fetchStockData])
@@ -193,94 +235,195 @@ export function CandlestickChat() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]">
-      {/* Ticker Search */}
-      <div className="relative mb-6" ref={dropdownRef}>
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => handleSearch(e.target.value)}
-          placeholder="Search stocks..."
-          className="w-full px-4 py-2 bg-white dark:bg-black border border-gray-200 dark:border-gray-800 rounded-lg"
-        />
-        
-        {searchResults.length > 0 && (
-          <div className="absolute top-full mt-1 w-full max-h-96 overflow-y-auto bg-white dark:bg-black border border-gray-200 dark:border-gray-800 rounded-lg shadow-lg z-10">
-            {searchResults.map((result) => (
-              <button
-                key={result.symbol}
-                onClick={() => handleStockSelect(result)}
-                className="w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-900 flex flex-col"
-              >
-                <span className="font-medium">{result.symbol}</span>
-                <span className="text-sm text-gray-500 dark:text-gray-400">{result.name}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Stock Info and Chart */}
-      <div className="mb-6">
-        <div className="mb-2 flex items-baseline">
-          <h2 className="text-2xl font-bold mr-2">{symbol}</h2>
-          <span className="text-gray-600 dark:text-gray-400">{currentStockName}</span>
+    <div className="grid grid-cols-12 gap-4 h-[calc(100vh-4rem)] p-4 bg-gray-50 dark:bg-gray-900">
+      {/* Analysis Parameters Panel */}
+      <div className="col-span-2 bg-white dark:bg-gray-800 rounded-xl shadow-lg flex flex-col">
+        <div className="p-4 border-b border-gray-100 dark:border-gray-700">
+          <h2 className="font-bold text-lg">Analysis Setup</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Configure your view</p>
         </div>
-        <div ref={chartContainerRef} className="w-full h-[300px]" />
-      </div>
+        
+        <div className="p-4 space-y-6 flex-1">
+          {/* Stock Search */}
+          <div className="relative" ref={dropdownRef}>
+            <label className="block text-sm font-medium mb-2">Stock Symbol</label>
+            <div className="relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+                placeholder="AAPL, MSFT, GOOGL..."
+                className="w-full px-3 py-2 pl-9 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500"
+              />
+              <svg className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
 
-      {/* Chat Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((message, i) => (
-          <div
-            key={i}
-            className={`p-4 rounded-lg ${
-              message.role === 'user'
-                ? 'bg-gray-100 dark:bg-gray-900 ml-auto'
-                : 'bg-gray-50 dark:bg-gray-900/50'
-            } max-w-[80%] ${message.role === 'assistant' ? 'font-mono whitespace-pre-line' : ''}`}
-          >
-            {message.role === 'assistant' ? (
-              <div className="space-y-4">
-                {message.content.split('\n\n').map((section, idx) => {
-                  const [title, ...content] = section.split('\n')
-                  return (
-                    <div key={idx} className="space-y-1">
-                      <h3 className="font-bold text-sm">{title}</h3>
-                      <div className="pl-4 text-sm text-gray-600 dark:text-gray-400">
-                        {content.join('\n')}
-                      </div>
-                    </div>
-                  )
-                })}
+            {searchResults.length > 0 && (
+              <div className="absolute w-full mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-50">
+                {searchResults.map((result) => (
+                  <button
+                    key={result.symbol}
+                    onClick={() => handleStockSelect(result)}
+                    className="w-full p-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <div className="font-medium">{result.symbol}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{result.name}</div>
+                  </button>
+                ))}
               </div>
-            ) : (
-              <p>{message.content}</p>
             )}
           </div>
-        ))}
+
+          {/* Timeframe Pills */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Timeframe</label>
+            <div className="grid grid-cols-2 gap-2">
+              {['1W', '1M', '3M', '6M', '1Y', 'ALL'].map((tf) => (
+                <button
+                  key={tf}
+                  onClick={() => setTimeframe(tf)}
+                  className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors
+                    ${timeframe === tf 
+                      ? 'bg-blue-500 text-white shadow-md' 
+                      : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600'
+                    }`}
+                >
+                  {tf}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Chart Type */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Chart Style</label>
+            <select 
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600"
+              defaultValue="candlestick"
+            >
+              <option value="candlestick">Candlestick</option>
+              <option value="line">Line</option>
+              <option value="area">Area</option>
+            </select>
+          </div>
+        </div>
       </div>
 
-      {/* Input Form */}
-      <form onSubmit={handleSubmit} className="p-4 border-t">
-        <div className="flex gap-4">
-          <input
-            type="text"
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            placeholder="Ask about candlestick patterns..."
-            className="flex-1 p-3 border bg-white dark:bg-black font-mono"
-            disabled={loading}
-          />
-          <button
-            type="submit"
-            disabled={loading}
-            className="bg-black dark:bg-white text-white dark:text-black px-8 py-3 font-mono hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors disabled:opacity-50"
-          >
-            {loading ? 'Thinking...' : 'Send'}
-          </button>
+      {/* Main Chart Panel */}
+      <div className="col-span-7 bg-white dark:bg-gray-800 rounded-xl shadow-lg flex flex-col">
+        {/* Chart Header */}
+        <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+          <div className="flex items-baseline gap-3">
+            <h2 className="text-2xl font-bold">{symbol}</h2>
+            <span className="text-gray-500 dark:text-gray-400">{currentStockName}</span>
+          </div>
+          {isLoading && (
+            <div className="flex items-center gap-2 text-gray-500">
+              <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              <span className="text-sm">Updating...</span>
+            </div>
+          )}
         </div>
-      </form>
+
+        {/* Chart Area */}
+        <div className="flex-1 p-4">
+          {error ? (
+            <div className="h-full flex items-center justify-center text-red-500">{error}</div>
+          ) : (
+            <div ref={chartContainerRef} className="h-full w-full" />
+          )}
+        </div>
+      </div>
+
+      {/* AI Analysis Panel */}
+      <div className="col-span-3 bg-white dark:bg-gray-800 rounded-xl shadow-lg flex flex-col">
+        <div className="p-4 border-b border-gray-100 dark:border-gray-700">
+          <h2 className="font-bold text-lg">AI Analysis</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Technical insights & patterns</p>
+        </div>
+
+        {/* Fixed Height Messages Container */}
+        <div className="flex-1 relative">
+          <div className="absolute inset-0 overflow-y-auto">
+            <div className="p-4 space-y-4">
+              {messages.map((message, index) => (
+                <div
+                  key={index}
+                  className={`rounded-lg ${
+                    message.role === 'assistant'
+                      ? 'bg-gradient-to-br from-blue-50/50 to-blue-100/50 dark:from-blue-900/20 dark:to-blue-800/20'
+                      : 'bg-gray-50 dark:bg-gray-700/20'
+                  }`}
+                >
+                  <div className="p-3 text-sm">
+                    {message.role === 'assistant' ? (
+                      <div className="space-y-2">
+                        {message.content.split('\n').map((line, i) => {
+                          if (line.startsWith('# ')) {
+                            return (
+                              <h4 key={i} className="font-semibold text-gray-900 dark:text-gray-100 mt-3">
+                                {line.replace('# ', '')}
+                              </h4>
+                            )
+                          } else if (line.startsWith('- ')) {
+                            return (
+                              <div key={i} className="flex gap-2 ml-2">
+                                <span>•</span>
+                                <span>{line.replace('- ', '')}</span>
+                              </div>
+                            )
+                          } else if (line.trim() === '') {
+                            return <div key={i} className="h-2" />
+                          } else {
+                            return <p key={i}>{line}</p>
+                          }
+                        })}
+                      </div>
+                    ) : (
+                      <p>{message.content}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Input Section */}
+        <div className="p-4 border-t border-gray-100 dark:border-gray-700">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyPress={(e: React.KeyboardEvent) => e.key === 'Enter' && handleSubmit(e)}
+              placeholder="Ask about patterns, trends, or signals..."
+              className="flex-1 px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600"
+            />
+            <button
+              onClick={(e: React.MouseEvent) => handleSubmit(e)}
+              disabled={loading}
+              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2 transition-colors"
+            >
+              {loading ? (
+                <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
