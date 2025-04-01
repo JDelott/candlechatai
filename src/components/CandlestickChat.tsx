@@ -257,6 +257,29 @@ export function CandlestickChat() {
     setLoading(true)
 
     try {
+      // Calculate Bollinger Bands
+      const calculateBollingerBands = (data: CandleData[], period: number) => {
+        const sma = calculateSMA(data, period)
+        return data.map((candle, index) => {
+          if (index < period - 1) return { time: candle.time, upper: null, middle: null, lower: null }
+          
+          const slice = data.slice(index - period + 1, index + 1)
+          const middle = sma[index - period + 1]?.value
+          if (!middle) return { time: candle.time, upper: null, middle: null, lower: null }
+
+          const standardDeviation = Math.sqrt(
+            slice.reduce((acc, curr) => acc + Math.pow(curr.close - middle, 2), 0) / period
+          )
+
+          return {
+            time: candle.time,
+            upper: middle + (2 * standardDeviation),
+            middle: middle,
+            lower: middle - (2 * standardDeviation)
+          }
+        }).filter(item => item.upper !== null && item.middle !== null && item.lower !== null)
+      }
+
       // Calculate current indicator values before sending
       const currentIndicators = {
         ...indicators,
@@ -272,6 +295,12 @@ export function CandlestickChat() {
             ? (indicators.ma.type === 'sma' 
                 ? calculateSMA(chartData, indicators.ma.period).slice(-1)[0]?.value.toFixed(2)
                 : calculateEMA(chartData, indicators.ma.period).slice(-1)[0]?.value.toFixed(2))
+            : undefined
+        },
+        bollinger: {
+          ...indicators.bollinger,
+          currentValues: indicators.bollinger.enabled && indicators.bollinger.period
+            ? calculateBollingerBands(chartData, indicators.bollinger.period).slice(-1)[0]
             : undefined
         }
       }

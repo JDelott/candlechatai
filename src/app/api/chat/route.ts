@@ -53,15 +53,31 @@ export async function POST(req: Request) {
       technicalSection += `\nCurrent Price: ${currentPrice} (${maDeviation}% from MA)`
     }
 
+    if (indicators.bollinger.enabled && indicators.bollinger.currentValues) {
+      const { upper, middle, lower } = indicators.bollinger.currentValues
+      const currentPrice = chartData.slice(-1)[0].close.toFixed(2)
+      technicalSection += `\nBollinger Bands (${indicators.bollinger.period}, 2 SD):`
+      technicalSection += `\n  - Upper Band: ${upper.toFixed(2)}`
+      technicalSection += `\n  - Middle Band: ${middle.toFixed(2)}`
+      technicalSection += `\n  - Lower Band: ${lower.toFixed(2)}`
+      technicalSection += `\n  - Current Price: ${currentPrice} (${
+        currentPrice > upper ? 'ABOVE upper band' :
+        currentPrice < lower ? 'BELOW lower band' :
+        'WITHIN bands'
+      })`
+    }
+
     let analysisPrompt = ''
-    if (indicators.rsi.enabled || indicators.ma.enabled) {
+    if (indicators.rsi.enabled || indicators.ma.enabled || indicators.bollinger.enabled) {
       analysisPrompt = `\nPlease provide:${
         indicators.rsi.enabled ? '\n1. EXACT interpretation of current RSI - is it oversold, overbought, or neutral?' : ''
       }${
         indicators.ma.enabled ? `\n2. Price position relative to ${indicators.ma.type.toUpperCase()}(${indicators.ma.period}) and what the deviation suggests` : ''
       }${
-        indicators.rsi.enabled || indicators.ma.enabled ? '\n3. Combined signal strength (Strong/Moderate/Weak Buy/Sell)' : ''
-      }\n4. Specific warning signals or divergences if present`
+        indicators.bollinger.enabled ? '\n3. Position relative to Bollinger Bands and volatility implications' : ''
+      }${
+        indicators.rsi.enabled || indicators.ma.enabled || indicators.bollinger.enabled ? '\n4. Combined signal strength (Strong/Moderate/Weak Buy/Sell)' : ''
+      }\n5. Specific warning signals or divergences if present`
     }
 
     const systemPrompt = `You are a technical analysis expert specializing in candlestick patterns and market analysis. 
