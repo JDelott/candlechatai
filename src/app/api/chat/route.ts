@@ -24,9 +24,14 @@ interface FormattedCandle {
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { messages, chartData, symbol } = body
+    const { messages, chartData, symbol, indicators = {
+      rsi: { enabled: false, period: 14 },
+      ma: { enabled: false, type: 'sma', period: 20 },
+      macd: { enabled: false },
+      bollinger: { enabled: false, period: 20 }
+    }} = body
 
-    // Format the candlestick data for the prompt
+    // Format candlestick data
     const recentCandles = chartData.slice(-20).map((candle: CandleData): FormattedCandle => ({
       date: candle.time,
       open: candle.open.toFixed(2),
@@ -35,19 +40,44 @@ export async function POST(req: Request) {
       close: candle.close.toFixed(2)
     }))
 
+    // Build technical analysis section based on enabled indicators
+    let technicalSection = ''
+    if (indicators.rsi.enabled && indicators.rsi.currentValue) {
+      technicalSection += `\nRSI (${indicators.rsi.period}): ${indicators.rsi.currentValue} (oversold < 30, overbought > 70)`
+    }
+
+    if (indicators.ma.enabled && indicators.ma.currentValue) {
+      const currentPrice = chartData.slice(-1)[0].close.toFixed(2)
+      const maDeviation = ((chartData.slice(-1)[0].close - parseFloat(indicators.ma.currentValue)) / parseFloat(indicators.ma.currentValue) * 100).toFixed(2)
+      technicalSection += `\n${indicators.ma.type.toUpperCase()}(${indicators.ma.period}): ${indicators.ma.currentValue}`
+      technicalSection += `\nCurrent Price: ${currentPrice} (${maDeviation}% from MA)`
+    }
+
+    let analysisPrompt = ''
+    if (indicators.rsi.enabled || indicators.ma.enabled) {
+      analysisPrompt = `\nPlease provide:${
+        indicators.rsi.enabled ? '\n1. EXACT interpretation of current RSI - is it oversold, overbought, or neutral?' : ''
+      }${
+        indicators.ma.enabled ? `\n2. Price position relative to ${indicators.ma.type.toUpperCase()}(${indicators.ma.period}) and what the deviation suggests` : ''
+      }${
+        indicators.rsi.enabled || indicators.ma.enabled ? '\n3. Combined signal strength (Strong/Moderate/Weak Buy/Sell)' : ''
+      }\n4. Specific warning signals or divergences if present`
+    }
+
     const systemPrompt = `You are a technical analysis expert specializing in candlestick patterns and market analysis. 
     You are analyzing ${symbol} stock data.
+    ${technicalSection ? '\nCurrent Technical Indicators:' + technicalSection : ''}
     
-    Here are the recent candlesticks:
+    Recent candlesticks:
     ${JSON.stringify(recentCandles, null, 2)}
     
     Please analyze:
     1. Any significant candlestick patterns
     2. The meaning and implications of these patterns
     3. Key price levels and trends
-    4. Overall technical outlook
-
-    Format your response in clear sections with headers.`
+    4. Overall technical outlook${analysisPrompt}
+    
+    Format your response in clear sections with exact numbers and definitive signals.`
 
     const response = await anthropic.messages.create({
       model: "claude-3-sonnet-20240229",

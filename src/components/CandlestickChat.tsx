@@ -201,26 +201,89 @@ export function CandlestickChat() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  async function handleSubmit(e: React.FormEvent) {
+  // Add calculation functions inside the component
+  const calculateRSI = (data: CandleData[], period: number) => {
+    let gains = 0
+    let losses = 0
+    const rsiData = []
+
+    for (let i = 1; i < data.length; i++) {
+      const difference = data[i].close - data[i - 1].close
+      if (difference > 0) gains += difference
+      else losses -= difference
+
+      if (i >= period) {
+        const avgGain = gains / period
+        const avgLoss = losses / period
+        const rs = avgGain / avgLoss
+        const rsi = 100 - (100 / (1 + rs))
+        rsiData.push({ time: data[i].time, value: rsi })
+
+        gains -= (data[i - period + 1].close - data[i - period].close > 0) 
+          ? data[i - period + 1].close - data[i - period].close 
+          : 0
+        losses -= (data[i - period + 1].close - data[i - period].close < 0) 
+          ? data[i - period].close - data[i - period + 1].close 
+          : 0
+      }
+    }
+    return rsiData
+  }
+
+  const calculateSMA = (data: CandleData[], period: number) => {
+    return data.map((candle, index) => {
+      if (index < period - 1) return { time: candle.time, value: null }
+      const sum = data.slice(index - period + 1, index + 1).reduce((acc, curr) => acc + curr.close, 0)
+      return { time: candle.time, value: sum / period }
+    }).filter(item => item.value !== null)
+  }
+
+  const calculateEMA = (data: CandleData[], period: number) => {
+    const multiplier = 2 / (period + 1)
+    let ema = data[0].close
+    return data.map((candle) => {
+      ema = (candle.close - ema) * multiplier + ema
+      return { time: candle.time, value: ema }
+    })
+  }
+
+  const handleSubmit = async (e: React.MouseEvent | React.KeyboardEvent) => {
     e.preventDefault()
     if (!input.trim() || loading) return
 
-    const userMessage = { role: 'user' as const, content: input }
-    setMessages(prev => [...prev, userMessage])
+    const newMessage: Message = { role: 'user', content: input }
+    setMessages(prev => [...prev, newMessage])
     setInput('')
     setLoading(true)
 
     try {
-      // Include last 20 candles in the request for context
-      const recentCandles = chartData.slice(-20)
-      
+      // Calculate current indicator values before sending
+      const currentIndicators = {
+        ...indicators,
+        rsi: {
+          ...indicators.rsi,
+          currentValue: indicators.rsi.enabled && indicators.rsi.period
+            ? calculateRSI(chartData, indicators.rsi.period).slice(-1)[0]?.value.toFixed(2)
+            : undefined
+        },
+        ma: {
+          ...indicators.ma,
+          currentValue: indicators.ma.enabled && indicators.ma.period
+            ? (indicators.ma.type === 'sma' 
+                ? calculateSMA(chartData, indicators.ma.period).slice(-1)[0]?.value.toFixed(2)
+                : calculateEMA(chartData, indicators.ma.period).slice(-1)[0]?.value.toFixed(2))
+            : undefined
+        }
+      }
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          messages: [...messages, userMessage],
-          chartData: recentCandles,
-          symbol: symbol
+        body: JSON.stringify({
+          messages: [...messages, newMessage],
+          chartData,
+          symbol: symbol,
+          indicators: currentIndicators
         })
       })
 
