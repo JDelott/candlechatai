@@ -65,33 +65,16 @@ Respond with ONLY the JSON array, no other text.`
       }]
     })
 
-    if (!response.content[0]) {
-      throw new Error('No response content received')
-    }
-
+    // Check if we have a valid response with content
     const content = response.content[0]
-    if ('text' in content) {
-      try {
-        // Clean the response text to ensure it only contains the JSON
-        const cleanedText = content.text.trim()
-          .replace(/^```json\s*/, '') // Remove potential markdown JSON block start
-          .replace(/\s*```$/, '')     // Remove potential markdown JSON block end
-        
-        const matches = JSON.parse(cleanedText)
-        if (!Array.isArray(matches)) {
-          throw new Error('Response is not an array')
-        }
-        
-        return NextResponse.json({ matches })
-      } catch (parseError) {
-        console.error('JSON parse error:', parseError)
-        return NextResponse.json({ matches: [] })
-      }
+    if (!content || content.type !== 'text') {
+      throw new Error('Invalid response from Claude')
     }
 
-    throw new Error('Unexpected response type')
+    const matches = JSON.parse(content.text)
+    return NextResponse.json({ matches })
   } catch (error) {
     console.error('Pattern scan error:', error)
-    return NextResponse.json({ error: 'Failed to scan patterns' }, { status: 500 })
+    return NextResponse.json({ error: 'Pattern scan failed' }, { status: 500 })
   }
 }
