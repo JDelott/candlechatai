@@ -326,7 +326,7 @@ export function CandlestickChat() {
     })
   }
 
-  const handleSubmit = async (e: React.MouseEvent | React.KeyboardEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!input.trim() || loading) return
 
@@ -663,400 +663,273 @@ export function CandlestickChat() {
     updateIndicators()
   }, [indicators, updateIndicators])
 
-  return (
-    <div className="grid grid-cols-12 gap-4 h-[calc(100vh-4rem)] p-4 bg-gray-50 dark:bg-gray-900">
-      {/* Analysis Parameters Panel - Enhanced */}
-      <div className="col-span-2 bg-white dark:bg-gray-800 rounded-xl shadow-lg flex flex-col">
-        <div className="p-4 border-b border-gray-100 dark:border-gray-700">
-          <h2 className="font-bold text-lg">Analysis Setup</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Configure your view</p>
-        </div>
-        
-        <div className="p-4 space-y-6 flex-1">
-          {/* Stock Search */}
-          <div className="relative" ref={dropdownRef}>
-            <label className="block text-sm font-medium mb-2">Stock Symbol</label>
-            <div className="relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => handleSearch(e.target.value)}
-                placeholder="AAPL, MSFT, GOOGL..."
-                className="w-full px-3 py-2 pl-9 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500"
-              />
-              <svg className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
+  const toggleIndicator = (type: keyof Indicators) => {
+    setIndicators(prev => ({
+      ...prev,
+      [type]: {
+        ...prev[type],
+        enabled: !prev[type].enabled
+      }
+    }))
+  }
 
-            {searchResults.length > 0 && (
-              <div className="absolute w-full mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-50">
-                {searchResults.map((result) => (
-                  <button
-                    key={result.symbol}
-                    onClick={() => handleStockSelect(result)}
-                    className="w-full p-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                  >
-                    <div className="font-medium">{result.symbol}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{result.name}</div>
-                  </button>
-                ))}
-              </div>
-            )}
+  return (
+    <div className="grid grid-cols-4 gap-4 py-4">
+      {/* Left sidebar with stock selection, etc */}
+      <div className="space-y-4">
+        {/* Stock Search */}
+        <div className="relative" ref={dropdownRef}>
+          <label className="block text-sm font-medium mb-2">Stock Symbol</label>
+          <div className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => handleSearch(e.target.value)}
+              placeholder="AAPL, MSFT, GOOGL..."
+              className="w-full px-3 py-2 pl-9 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 focus:ring-2 focus:ring-blue-500"
+            />
+            <svg className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
           </div>
 
-          {/* Timeframe Pills */}
-          <div>
-            <label className="block text-sm font-medium mb-2">Timeframe</label>
-            <div className="grid grid-cols-2 gap-2">
-              {['1W', '1M', '3M', '6M', '1Y', 'ALL'].map((tf) => (
+          {searchResults.length > 0 && (
+            <div className="absolute w-full mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-50">
+              {searchResults.map((result) => (
                 <button
-                  key={tf}
-                  onClick={() => setTimeframe(tf)}
-                  className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors
-                    ${timeframe === tf 
-                      ? 'bg-blue-500 text-white shadow-md' 
-                      : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600'
-                    }`}
+                  key={result.symbol}
+                  onClick={() => handleStockSelect(result)}
+                  className="w-full p-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                 >
-                  {tf}
+                  <div className="font-medium">{result.symbol}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{result.name}</div>
                 </button>
               ))}
-            </div>
-          </div>
-
-          {/* Chart Type */}
-          <div>
-            <label className="block text-sm font-medium mb-2">Chart Style</label>
-            <div className="relative">
-              <select 
-                className="w-full px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 [&>*]:bg-white [&>*]:dark:bg-gray-800"
-                value={chartStyle}
-                onChange={(e) => setChartStyle(e.target.value as 'candlestick' | 'line' | 'area')}
-                style={{
-                  WebkitAppearance: 'none',
-                  MozAppearance: 'none'
-                }}
-              >
-                <option value="candlestick" className="px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-700">
-                  Candlestick Chart
-                </option>
-                <option value="line" className="px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-700">
-                  Line Chart
-                </option>
-                <option value="area" className="px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-700">
-                  Area Chart
-                </option>
-              </select>
-              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500 dark:text-gray-400">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* New Technical Indicators Section */}
-        <div className="p-4 border-t border-gray-100 dark:border-gray-700">
-          <h3 className="text-sm font-medium mb-3">Technical Indicators</h3>
-          <div className="space-y-3">
-            {/* Moving Average */}
-            <div className="flex items-center justify-between">
-              <label className="text-sm">Moving Average</label>
-              <div className="flex items-center gap-2">
-                <select 
-                  className="text-sm bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 px-2 py-1"
-                  value={indicators.ma.type}
-                  onChange={(e) => {
-                    setIndicators(prev => ({
-                      ...prev,
-                      ma: { ...prev.ma, type: e.target.value as 'sma' | 'ema' }
-                    }))
-                  }}
-                >
-                  <option value="sma">SMA</option>
-                  <option value="ema">EMA</option>
-                </select>
-                <input
-                  type="number"
-                  min="1"
-                  max="200"
-                  value={indicators.ma.period}
-                  onChange={(e) => {
-                    setIndicators(prev => ({
-                      ...prev,
-                      ma: { ...prev.ma, period: parseInt(e.target.value) }
-                    }))
-                  }}
-                  className="w-16 text-sm bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 px-2 py-1"
-                />
-                <input 
-                  type="checkbox"
-                  checked={indicators.ma.enabled}
-                  onChange={(e) => {
-                    setIndicators(prev => ({
-                      ...prev,
-                      ma: { ...prev.ma, enabled: e.target.checked }
-                    }))
-                  }}
-                  className="toggle toggle-sm"
-                />
-              </div>
-            </div>
-
-            {/* RSI */}
-            <div className="flex items-center justify-between">
-              <label className="text-sm">RSI</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={indicators.rsi.period}
-                  onChange={(e) => {
-                    setIndicators(prev => ({
-                      ...prev,
-                      rsi: { ...prev.rsi, period: parseInt(e.target.value) }
-                    }))
-                  }}
-                  className="w-16 text-sm bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 px-2 py-1"
-                />
-                <input 
-                  type="checkbox"
-                  checked={indicators.rsi.enabled}
-                  onChange={(e) => {
-                    setIndicators(prev => ({
-                      ...prev,
-                      rsi: { ...prev.rsi, enabled: e.target.checked }
-                    }))
-                  }}
-                  className="toggle toggle-sm"
-                />
-              </div>
-            </div>
-
-            {/* Bollinger Bands */}
-            <div className="flex items-center justify-between">
-              <label className="text-sm">Bollinger Bands</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={indicators.bollinger.period}
-                  onChange={(e) => {
-                    setIndicators(prev => ({
-                      ...prev,
-                      bollinger: { ...prev.bollinger, period: parseInt(e.target.value) }
-                    }))
-                  }}
-                  className="w-16 text-sm bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 px-2 py-1"
-                />
-                <input 
-                  type="checkbox"
-                  checked={indicators.bollinger.enabled}
-                  onChange={(e) => {
-                    setIndicators(prev => ({
-                      ...prev,
-                      bollinger: { ...prev.bollinger, enabled: e.target.checked }
-                    }))
-                  }}
-                  className="toggle toggle-sm"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* New Alert Settings */}
-        <div className="p-4 border-t border-gray-100 dark:border-gray-700">
-          <h3 className="text-sm font-medium mb-3">Price Alerts</h3>
-          <div className="space-y-3">
-            <div className="flex gap-2">
-              <input 
-                type="number" 
-                placeholder="Above"
-                className="flex-1 px-3 py-1 text-sm bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600"
-              />
-              <button className="px-3 py-1 text-sm bg-blue-500 text-white rounded-lg">Set</button>
-            </div>
-            <div className="flex gap-2">
-              <input 
-                type="number" 
-                placeholder="Below"
-                className="flex-1 px-3 py-1 text-sm bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600"
-              />
-              <button className="px-3 py-1 text-sm bg-blue-500 text-white rounded-lg">Set</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Chart Panel - Enhanced */}
-      <div className="col-span-7 bg-white dark:bg-gray-800 rounded-xl shadow-lg flex flex-col">
-        {/* Quick Stats Bar */}
-        {chartData.length > 0 && (
-          <div className="grid grid-cols-5 gap-4 p-4 border-b border-gray-100 dark:border-gray-700">
-            <div className="text-center">
-              <div className="text-sm text-gray-500 dark:text-gray-400">Open</div>
-              <div className="font-semibold">${chartData[chartData.length - 1].open.toFixed(2)}</div>
-            </div>
-            <div className="text-center">
-              <div className="text-sm text-gray-500 dark:text-gray-400">High</div>
-              <div className="font-semibold text-green-500">${chartData[chartData.length - 1].high.toFixed(2)}</div>
-            </div>
-            <div className="text-center">
-              <div className="text-sm text-gray-500 dark:text-gray-400">Low</div>
-              <div className="font-semibold text-red-500">${chartData[chartData.length - 1].low.toFixed(2)}</div>
-            </div>
-            <div className="text-center">
-              <div className="text-sm text-gray-500 dark:text-gray-400">Volume</div>
-              <div className="font-semibold">{(chartData[chartData.length - 1].volume / 1000000).toFixed(1)}M</div>
-            </div>
-            <div className="text-center">
-              <div className="text-sm text-gray-500 dark:text-gray-400">Change</div>
-              {(() => {
-                const current = chartData[chartData.length - 1].close
-                const previous = chartData[chartData.length - 2]?.close || current
-                const change = current - previous
-                const percentChange = (change / previous) * 100
-                const isPositive = change >= 0
-                return (
-                  <div className={`font-semibold ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
-                    {isPositive ? '+' : ''}{change.toFixed(2)} ({isPositive ? '+' : ''}{percentChange.toFixed(2)}%)
-                  </div>
-                )
-              })()}
-            </div>
-          </div>
-        )}
-
-        {/* Existing Chart Header */}
-        <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-          <div className="flex items-baseline gap-3">
-            <h2 className="text-2xl font-bold">{symbol}</h2>
-            <span className="text-gray-500 dark:text-gray-400">{currentStockName}</span>
-          </div>
-          {isLoading && (
-            <div className="flex items-center gap-2 text-gray-500">
-              <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-              <span className="text-sm">Updating...</span>
             </div>
           )}
         </div>
 
-        {/* Chart Area with New Tools */}
-        <div className="flex-1 flex flex-col">
+        {/* Timeframe Pills */}
+        <div>
+          <label className="block text-sm font-medium mb-2">Timeframe</label>
+          <div className="grid grid-cols-2 gap-2">
+            {['1W', '1M', '3M', '6M', '1Y', 'ALL'].map((tf) => (
+              <button
+                key={tf}
+                onClick={() => setTimeframe(tf)}
+                className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors
+                  ${timeframe === tf 
+                    ? 'bg-blue-500 text-white shadow-md' 
+                    : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600'
+                  }`}
+              >
+                {tf}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Chart Type */}
+        <div>
+          <label className="block text-sm font-medium mb-2">Chart Style</label>
+          <div className="relative">
+            <select 
+              className="w-full px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 [&>*]:bg-white [&>*]:dark:bg-gray-800"
+              value={chartStyle}
+              onChange={(e) => setChartStyle(e.target.value as 'candlestick' | 'line' | 'area')}
+              style={{
+                WebkitAppearance: 'none',
+                MozAppearance: 'none'
+              }}
+            >
+              <option value="candlestick" className="px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-700">
+                Candlestick Chart
+              </option>
+              <option value="line" className="px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-700">
+                Line Chart
+              </option>
+              <option value="area" className="px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-700">
+                Area Chart
+              </option>
+            </select>
+            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500 dark:text-gray-400">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        {/* Add Indicator Controls */}
+        <div>
+          <label className="block text-sm font-medium mb-2">Indicators</label>
+          <div className="space-y-2">
+            <button
+              onClick={() => toggleIndicator('ma')}
+              className={`w-full px-3 py-2 text-sm font-medium rounded-lg transition-colors
+                ${indicators.ma.enabled 
+                  ? 'bg-blue-500 text-white' 
+                  : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100'
+                }`}
+            >
+              Moving Average
+            </button>
+            <button
+              onClick={() => toggleIndicator('rsi')}
+              className={`w-full px-3 py-2 text-sm font-medium rounded-lg transition-colors
+                ${indicators.rsi.enabled 
+                  ? 'bg-blue-500 text-white' 
+                  : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100'
+                }`}
+            >
+              RSI
+            </button>
+            <button
+              onClick={() => toggleIndicator('bollinger')}
+              className={`w-full px-3 py-2 text-sm font-medium rounded-lg transition-colors
+                ${indicators.bollinger.enabled 
+                  ? 'bg-blue-500 text-white' 
+                  : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100'
+                }`}
+            >
+              Bollinger Bands
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main content area */}
+      <div className="col-span-3 bg-white dark:bg-gray-800 rounded-xl shadow-lg flex flex-col">
+        {/* Chart Section */}
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+          {/* Quick Stats Bar */}
+          {chartData.length > 0 && (
+            <div className="grid grid-cols-5 gap-4 p-4 border-b border-gray-100 dark:border-gray-700">
+              <div className="text-center">
+                <div className="text-sm text-gray-500 dark:text-gray-400">Open</div>
+                <div className="font-semibold">${chartData[chartData.length - 1].open.toFixed(2)}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-sm text-gray-500 dark:text-gray-400">High</div>
+                <div className="font-semibold text-green-500">${chartData[chartData.length - 1].high.toFixed(2)}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-sm text-gray-500 dark:text-gray-400">Low</div>
+                <div className="font-semibold text-red-500">${chartData[chartData.length - 1].low.toFixed(2)}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-sm text-gray-500 dark:text-gray-400">Volume</div>
+                <div className="font-semibold">{(chartData[chartData.length - 1].volume / 1000000).toFixed(1)}M</div>
+              </div>
+              <div className="text-center">
+                <div className="text-sm text-gray-500 dark:text-gray-400">Change</div>
+                {(() => {
+                  const current = chartData[chartData.length - 1].close
+                  const previous = chartData[chartData.length - 2]?.close || current
+                  const change = current - previous
+                  const percentChange = (change / previous) * 100
+                  const isPositive = change >= 0
+                  return (
+                    <div className={`font-semibold ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                      {isPositive ? '+' : ''}{change.toFixed(2)} ({isPositive ? '+' : ''}{percentChange.toFixed(2)}%)
+                    </div>
+                  )
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* Chart Header */}
+          <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+            <div className="flex items-baseline gap-3">
+              <h2 className="text-2xl font-bold">{symbol}</h2>
+              <span className="text-gray-500 dark:text-gray-400">{currentStockName}</span>
+            </div>
+            {isLoading && (
+              <div className="flex items-center gap-2 text-gray-500">
+                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                <span className="text-sm">Updating...</span>
+              </div>
+            )}
+          </div>
+
+          {/* Chart Tools */}
           <div className="flex items-center gap-2 p-2 border-b border-gray-100 dark:border-gray-700">
             <button className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
               </svg>
             </button>
-            <button className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-            <div className="h-4 border-r border-gray-200 dark:border-gray-700"></div>
-            <button className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-            </button>
-            <button className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-            </button>
           </div>
+
+          {/* Chart Area */}
           <div className="flex-1 p-4">
             {error ? (
               <div className="h-full flex items-center justify-center text-red-500">{error}</div>
             ) : (
-              <div ref={chartContainerRef} className="h-full w-full" />
+              <div ref={chartContainerRef} className="h-[400px] w-full" />
             )}
           </div>
         </div>
-      </div>
 
-      {/* AI Analysis Panel - Enhanced */}
-      <div className="col-span-3 bg-white dark:bg-gray-800 rounded-xl shadow-lg flex flex-col">
-        {/* New Analysis Tabs */}
-        <div className="border-b border-gray-100 dark:border-gray-700">
-          <div className="flex">
-            <button className="px-4 py-3 text-sm font-medium border-b-2 border-blue-500">AI Chat</button>
-            <button className="px-4 py-3 text-sm font-medium text-gray-500 dark:text-gray-400">Patterns</button>
-            <button className="px-4 py-3 text-sm font-medium text-gray-500 dark:text-gray-400">Signals</button>
-          </div>
-        </div>
-
-        {/* Messages Container */}
-        <div className="flex-1 flex flex-col">
-          <div className="flex-1 relative">
-            <div className="absolute inset-0 overflow-y-auto">
-              <div className="p-4 space-y-4">
-                {messages.map((message, index) => (
-                  <div
-                    key={index}
-                    className={`rounded-lg ${
-                      message.role === 'assistant'
-                        ? 'bg-gradient-to-br from-blue-50/50 to-blue-100/50 dark:from-blue-900/20 dark:to-blue-800/20'
-                        : 'bg-gray-50 dark:bg-gray-700/20'
-                    }`}
-                  >
-                    <div className="p-3 text-sm">
-                      {message.role === 'assistant' ? (
-                        <div className="space-y-2">
-                          {message.content.split('\n').map((line, i) => {
-                            if (line.startsWith('# ')) {
-                              return (
-                                <h4 key={i} className="font-semibold text-gray-900 dark:text-gray-100 mt-3">
-                                  {line.replace('# ', '')}
-                                </h4>
-                              )
-                            } else if (line.startsWith('- ')) {
-                              return (
-                                <div key={i} className="flex gap-2 ml-2">
-                                  <span>•</span>
-                                  <span>{line.replace('- ', '')}</span>
-                                </div>
-                              )
-                            } else if (line.trim() === '') {
-                              return <div key={i} className="h-2" />
-                            } else {
-                              return <p key={i}>{line}</p>
-                            }
-                          })}
-                        </div>
-                      ) : (
-                        <p>{message.content}</p>
-                      )}
+        {/* Chat Section */}
+        <div className="flex-1 flex flex-col p-4">
+          <div className="flex-1 overflow-y-auto space-y-4">
+            {messages.map((message, index) => (
+              <div
+                key={index}
+                className={`rounded-lg ${
+                  message.role === 'assistant'
+                    ? 'bg-gradient-to-br from-blue-50/50 to-blue-100/50 dark:from-blue-900/20 dark:to-blue-800/20'
+                    : 'bg-gray-50 dark:bg-gray-700/20'
+                }`}
+              >
+                <div className="p-3 text-sm">
+                  {message.role === 'assistant' ? (
+                    <div className="space-y-2">
+                      {message.content.split('\n').map((line, i) => {
+                        if (line.startsWith('# ')) {
+                          return (
+                            <h4 key={i} className="font-semibold text-gray-900 dark:text-gray-100 mt-3">
+                              {line.replace('# ', '')}
+                            </h4>
+                          )
+                        } else if (line.startsWith('- ')) {
+                          return (
+                            <div key={i} className="flex gap-2 ml-2">
+                              <span>•</span>
+                              <span>{line.replace('- ', '')}</span>
+                            </div>
+                          )
+                        } else if (line.trim() === '') {
+                          return <div key={i} className="h-2" />
+                        } else {
+                          return <p key={i}>{line}</p>
+                        }
+                      })}
                     </div>
-                  </div>
-                ))}
+                  ) : (
+                    <p>{message.content}</p>
+                  )}
+                </div>
               </div>
-            </div>
+            ))}
           </div>
-
-          {/* Input Section */}
-          <div className="p-4 border-t border-gray-100 dark:border-gray-700">
-            <div className="flex gap-2">
+          
+          <div className="mt-4">
+            <form onSubmit={handleSubmit} className="flex gap-2">
               <input
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyPress={(e: React.KeyboardEvent) => e.key === 'Enter' && handleSubmit(e)}
                 placeholder="Ask about patterns, trends, or signals..."
                 className="flex-1 px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600"
               />
               <button
-                onClick={(e: React.MouseEvent) => handleSubmit(e)}
+                type="submit"
                 disabled={loading}
                 className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2 transition-colors"
               >
@@ -1071,7 +944,7 @@ export function CandlestickChat() {
                   </svg>
                 )}
               </button>
-            </div>
+            </form>
           </div>
         </div>
       </div>
