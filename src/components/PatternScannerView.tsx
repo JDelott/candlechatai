@@ -1,7 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
-import { createChart, ColorType, IChartApi } from 'lightweight-charts'
-import Link from 'next/link'
-import { useDebounce } from '@/hooks/useDebounce'
+import { useState, useRef, useEffect, useMemo } from 'react'
+import { createChart, IChartApi } from 'lightweight-charts'
 import { SectorStockManager } from './SectorStockManager'
 
 type PatternType = {
@@ -10,7 +8,7 @@ type PatternType = {
   category: 'bullish' | 'bearish' | 'continuation'
 }
 
-type ChartData = {
+type ChartDataPoint = {
   time: string
   open: number
   high: number
@@ -19,20 +17,70 @@ type ChartData = {
   volume: number
 }
 
-type ScanResult = {
+type PatternPoint = {
+  date: string
+  price: number
+  significance: string
+}
+
+interface PatternMatch {
   symbol: string
   confidence: number
   price: number
-  chartData: ChartData[]
+  sector: string
+  patternComplete: boolean
+  volumeConfirms: boolean
+  chartData: ChartDataPoint[]
+  analysis: {
+    description: string
+    keyLevels: {
+      support: number
+      resistance: number
+      breakoutTarget: number
+    }
+    formationPeriod: {
+      start: string
+      end: string
+    }
+    patternPoints: PatternPoint[]
+    volumeAnalysis: string
+  }
 }
 
-type SearchResult = {
-  symbol: string
-  name: string
-}
+
 
 // Using the existing patterns from PatternScanner.tsx
 const CANDLESTICK_PATTERNS: PatternType[] = [
+  {
+    name: 'Rising Wedge',
+    description: 'Bearish pattern with converging trendlines both pointing upward',
+    category: 'bearish'
+  },
+  {
+    name: 'Falling Wedge',
+    description: 'Bullish pattern with converging trendlines both pointing downward',
+    category: 'bullish'
+  },
+  {
+    name: 'Ascending Triangle',
+    description: 'Bullish pattern with horizontal resistance and rising support',
+    category: 'bullish'
+  },
+  {
+    name: 'Descending Triangle',
+    description: 'Bearish pattern with horizontal support and falling resistance',
+    category: 'bearish'
+  },
+  {
+    name: 'Inverse Head and Shoulders',
+    description: 'Bullish reversal pattern with three troughs, middle being lowest',
+    category: 'bullish'
+  },
+  {
+    name: 'Head and Shoulders',
+    description: 'Bearish reversal pattern with three peaks, middle being highest',
+    category: 'bearish'
+  },
   {
     name: 'Hammer',
     description: 'Bullish reversal pattern with a small body and long lower shadow',
@@ -76,52 +124,19 @@ const MARKET_SECTORS = [
 type SectorId = typeof MARKET_SECTORS[number]['id']
 
 export function PatternScannerView() {
-  const [selectedPattern, setSelectedPattern] = useState('')
-  const [isScanning, setIsScanning] = useState(false)
-  const [scanResults, setScanResults] = useState<ScanResult[]>([])
-  const [activeCategory, setActiveCategory] = useState<'bullish' | 'bearish' | 'continuation' | 'all'>('all')
+  const [selectedPattern, setSelectedPattern] = useState<string>('')
   const [selectedSector, setSelectedSector] = useState<SectorId>('all')
-  const chartRefs = useRef<Map<string, HTMLDivElement>>(new Map())
-  
-  // Stock search states
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
-  const [isSearching, setIsSearching] = useState(false)
-  const [selectedStock, setSelectedStock] = useState<string>('')
-  const debouncedSearch = useDebounce(searchQuery, 300)
-
-  // Sector stock manager state
+  const [activeCategory, setActiveCategory] = useState<'all' | 'bullish' | 'bearish' | 'continuation'>('all')
+  const [isScanning, setIsScanning] = useState(false)
+  const [scanResults, setScanResults] = useState<PatternMatch[]>([])
   const [isSectorManagerOpen, setIsSectorManagerOpen] = useState(false)
-
-  // Search for stocks
-  useEffect(() => {
-    const searchStocks = async () => {
-      if (!debouncedSearch) {
-        setSearchResults([])
-        return
-      }
-
-      setIsSearching(true)
-      try {
-        const response = await fetch(`/api/stock/search?q=${debouncedSearch}`)
-        if (!response.ok) throw new Error('Search failed')
-        const data = await response.json()
-        setSearchResults(data.results)
-      } catch (error) {
-        console.error('Stock search error:', error)
-      } finally {
-        setIsSearching(false)
-      }
-    }
-
-    searchStocks()
-  }, [debouncedSearch])
-
-  const handleSelectStock = (result: SearchResult) => {
-    setSelectedStock(result.symbol)
-    setSearchQuery('')
-    setSearchResults([])
-  }
+  const chartContainers = useRef<{ [key: string]: HTMLDivElement | null }>({})
+  const charts = useRef<{ [key: string]: IChartApi }>({})
+  
+  const filteredPatterns = useMemo(() => {
+    if (activeCategory === 'all') return CANDLESTICK_PATTERNS
+    return CANDLESTICK_PATTERNS.filter(pattern => pattern.category === activeCategory)
+  }, [activeCategory])
 
   const handleScan = async () => {
     if (!selectedPattern) return
@@ -136,22 +151,13 @@ export function PatternScannerView() {
         })
       })
       
-      if (!response.ok) throw new Error('Scan failed')
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Scan failed')
+      }
+
       const data = await response.json()
-      
-      // Fetch chart data for each match
-      const resultsWithCharts = await Promise.all(
-        data.matches.map(async (match: { symbol: string }) => {
-          const chartResponse = await fetch(`/api/stock/history?symbol=${match.symbol}`)
-          const chartData = await chartResponse.json()
-          return {
-            ...match,
-            chartData: chartData.slice(-30) // Last 30 days
-          }
-        })
-      )
-      
-      setScanResults(resultsWithCharts)
+      setScanResults(data.matches)
     } catch (error) {
       console.error('Pattern scan error:', error)
     } finally {
@@ -159,167 +165,110 @@ export function PatternScannerView() {
     }
   }
 
-  useEffect(() => {
-    // Cleanup previous charts
-    const charts: IChartApi[] = []
-
-    // Create mini charts for each result
-    scanResults.forEach((result) => {
-      const container = chartRefs.current.get(result.symbol)
-      if (!container) return
-
-      const chart = createChart(container, {
-        width: container.clientWidth,
-        height: 200,
-        layout: {
-          background: { type: ColorType.Solid, color: 'transparent' },
-          textColor: '#999',
-        },
-        grid: {
-          vertLines: { visible: false },
-          horzLines: { visible: false },
-        },
-        rightPriceScale: {
-          borderVisible: false,
-        },
-        timeScale: {
-          borderVisible: false,
-          timeVisible: true,
-        },
-      })
-
-      const candlestickSeries = chart.addCandlestickSeries()
-      candlestickSeries.setData(result.chartData)
-      
-      charts.push(chart)
-    })
-
-    // Cleanup function
-    return () => {
-      charts.forEach(chart => chart.remove())
-    }
-  }, [scanResults])
-
-  const setChartRef = (symbol: string) => (el: HTMLDivElement | null) => {
-    if (el) {
-      chartRefs.current.set(symbol, el)
-    } else {
-      chartRefs.current.delete(symbol)
+  // Function to set chart container reference
+  const setChartRef = (symbol: string) => (node: HTMLDivElement | null) => {
+    if (node !== null) {
+      chartContainers.current[symbol] = node
     }
   }
 
-  const filteredPatterns = CANDLESTICK_PATTERNS.filter(pattern => 
-    activeCategory === 'all' || pattern.category === activeCategory
-  )
+  // Initialize and update charts
+  useEffect(() => {
+    // Clean up old charts
+    Object.values(charts.current).forEach(chart => chart.remove())
+    charts.current = {}
+
+    // Create new charts for results
+    scanResults.forEach(result => {
+      const container = chartContainers.current[result.symbol]
+      if (!container || !result.chartData?.length) return
+
+      const chart = createChart(container, {
+        width: container.clientWidth,
+        height: 250,
+        layout: {
+          background: { color: '#ffffff' },
+          textColor: '#333',
+        },
+        grid: {
+          vertLines: { color: '#f0f0f0' },
+          horzLines: { color: '#f0f0f0' },
+        },
+        timeScale: {
+          timeVisible: true,
+          secondsVisible: false,
+        },
+      })
+
+      const candlestickSeries = chart.addCandlestickSeries({
+        upColor: '#26a69a',
+        downColor: '#ef5350',
+        borderVisible: false,
+        wickUpColor: '#26a69a',
+        wickDownColor: '#ef5350',
+      })
+
+      // Only set data if it exists
+      if (Array.isArray(result.chartData) && result.chartData.length > 0) {
+        candlestickSeries.setData(result.chartData)
+      }
+
+      charts.current[result.symbol] = chart
+    })
+
+    // Handle resize
+    const handleResize = () => {
+      Object.entries(charts.current).forEach(([symbol, chart]) => {
+        const container = chartContainers.current[symbol]
+        if (container) {
+          chart.applyOptions({ width: container.clientWidth })
+        }
+      })
+    }
+
+    window.addEventListener('resize', handleResize)
+
+    // Cleanup
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      Object.values(charts.current).forEach(chart => chart.remove())
+      charts.current = {}
+    }
+  }, [scanResults])
 
   return (
-    <div className="grid grid-cols-4 gap-4 py-4">
-      {/* Left sidebar */}
-      <div className="space-y-4 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-lg">
-        <div>
-          <h3 className="text-lg font-semibold mb-4">Pattern Categories</h3>
-          <div className="space-y-2">
+    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 py-6">
+      {/* Left sidebar with controls */}
+      <div className="lg:col-span-1 space-y-6 bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg">
+        <h2 className="text-xl font-semibold mb-6">Pattern Scanner</h2>
+        
+        {/* Pattern Categories */}
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
+          <div className="flex flex-wrap gap-2">
             {['all', 'bullish', 'bearish', 'continuation'].map((category) => (
               <button
                 key={category}
                 onClick={() => setActiveCategory(category as typeof activeCategory)}
-                className={`w-full px-3 py-2 text-sm font-medium rounded-lg transition-colors
+                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors
                   ${activeCategory === category 
                     ? 'bg-blue-500 text-white' 
-                    : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                   }`}
               >
-                {category.charAt(0).toUpperCase() + category.slice(1)} Patterns
+                {category.charAt(0).toUpperCase() + category.slice(1)}
               </button>
             ))}
           </div>
-        </div>
-
-        {/* Updated Stock Search with loading indicator */}
-        <div className="space-y-2">
-          <label className="block text-sm font-medium mb-2">Search Stock</label>
-          <div className="relative">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search stocks..."
-              className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg"
-            />
-            
-            {isSearching && (
-              <div className="absolute right-3 top-2.5">
-                <svg className="animate-spin h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-              </div>
-            )}
-            
-            {/* Search Results Dropdown */}
-            {searchResults.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-60 overflow-auto">
-                {searchResults.map((result) => (
-                  <button
-                    key={result.symbol}
-                    onClick={() => handleSelectStock(result)}
-                    className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex justify-between items-center"
-                  >
-                    <span className="font-medium">{result.symbol}</span>
-                    <span className="text-sm text-gray-500">{result.name}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Selected Stock */}
-          {selectedStock && (
-            <div className="p-2 bg-gray-50 dark:bg-gray-700 rounded-lg flex justify-between items-center">
-              <span>{selectedStock}</span>
-              <button
-                onClick={() => setSelectedStock('')}
-                className="text-red-500 hover:text-red-600"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Market Sectors with View/Edit Button */}
-        <div>
-          <div className="flex justify-between items-center mb-2">
-            <label className="block text-sm font-medium">Market Sector</label>
-            <button
-              onClick={() => setIsSectorManagerOpen(true)}
-              className="text-sm text-blue-500 hover:text-blue-600"
-            >
-              View/Edit Stocks
-            </button>
-          </div>
-          <select
-            value={selectedSector}
-            onChange={(e) => setSelectedSector(e.target.value as SectorId)}
-            className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg"
-          >
-            {MARKET_SECTORS.map((sector) => (
-              <option key={sector.id} value={sector.id}>
-                {sector.name}
-              </option>
-            ))}
-          </select>
         </div>
 
         {/* Pattern Selection */}
-        <div>
-          <label className="block text-sm font-medium mb-2">Candlestick Pattern</label>
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Pattern</label>
           <select
             value={selectedPattern}
             onChange={(e) => setSelectedPattern(e.target.value)}
-            className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg"
+            className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
           >
             <option value="">Choose a pattern...</option>
             {filteredPatterns.map((pattern) => (
@@ -330,10 +279,35 @@ export function PatternScannerView() {
           </select>
         </div>
 
+        {/* Sector Selection */}
+        <div className="space-y-2">
+          <div className="flex justify-between items-center">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Market Sector</label>
+            <button
+              onClick={() => setIsSectorManagerOpen(true)}
+              className="text-sm text-blue-500 hover:text-blue-600"
+            >
+              Manage Stocks
+            </button>
+          </div>
+          <select
+            value={selectedSector}
+            onChange={(e) => setSelectedSector(e.target.value as SectorId)}
+            className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg"
+          >
+            {MARKET_SECTORS.map((sector) => (
+              <option key={sector.id} value={sector.id}>
+                {sector.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Scan Button */}
         <button
           onClick={handleScan}
           disabled={!selectedPattern || isScanning}
-          className="w-full px-4 py-2 bg-blue-500 text-white rounded-lg disabled:opacity-50 hover:bg-blue-600 transition-colors"
+          className="w-full px-4 py-3 bg-blue-500 text-white rounded-lg disabled:opacity-50 hover:bg-blue-600 transition-colors"
         >
           {isScanning ? (
             <div className="flex items-center justify-center gap-2">
@@ -341,19 +315,146 @@ export function PatternScannerView() {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
               </svg>
-              <span>Scanning Market...</span>
+              <span>Scanning...</span>
             </div>
           ) : (
-            'Find Matching Patterns'
+            'Find Patterns'
           )}
         </button>
 
+        {/* Pattern Description */}
         {selectedPattern && (
           <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
             <h3 className="font-medium mb-2">{selectedPattern}</h3>
             <p className="text-sm text-gray-600 dark:text-gray-300">
               {CANDLESTICK_PATTERNS.find(p => p.name === selectedPattern)?.description}
             </p>
+          </div>
+        )}
+      </div>
+
+      {/* Results Grid */}
+      <div className="lg:col-span-3">
+        {scanResults.length > 0 ? (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            {scanResults.map((match) => (
+              <div key={match.symbol} className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+                {/* Header */}
+                <div className="p-6 border-b border-gray-100 dark:border-gray-700">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="text-xl font-semibold flex items-center gap-2">
+                        {match.symbol}
+                        <span className="text-sm font-normal text-gray-500">
+                          {match.sector}
+                        </span>
+                      </h3>
+                      <p className="text-lg font-medium mt-1">
+                        ${match.price.toFixed(2)}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <div className={`px-3 py-1 rounded-full text-sm font-medium
+                        ${match.confidence >= 90 
+                          ? 'bg-green-100 text-green-800' 
+                          : match.confidence >= 80 
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                        {match.confidence}% Confidence
+                      </div>
+                      <span className={`mt-2 px-3 py-1 rounded-full text-xs
+                        ${match.patternComplete 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                        {match.patternComplete ? 'Pattern Complete' : 'Pattern Forming'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Chart */}
+                <div ref={setChartRef(match.symbol)} className="w-full h-[250px]" />
+
+                {/* Analysis */}
+                <div className="p-6 space-y-4">
+                  <div>
+                    <h4 className="font-medium text-gray-900 dark:text-gray-100">Analysis</h4>
+                    <p className="mt-1 text-gray-600 dark:text-gray-400">{match.analysis.description}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Key Levels */}
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">Key Levels</h4>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Support</span>
+                          <span className="font-medium">${match.analysis.keyLevels.support.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Resistance</span>
+                          <span className="font-medium">${match.analysis.keyLevels.resistance.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Target</span>
+                          <span className="font-medium text-green-600">${match.analysis.keyLevels.breakoutTarget.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Pattern Points */}
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">Pattern Points</h4>
+                      <div className="space-y-2">
+                        {match.analysis.patternPoints.map((point, index) => (
+                          <div key={index} className="text-sm">
+                            <div className="font-medium">{point.significance}</div>
+                            <div className="text-gray-500">
+                              ${point.price.toFixed(2)} on {new Date(point.date).toLocaleDateString()}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Volume Analysis */}
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">Volume Analysis</h4>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{match.analysis.volumeAnalysis}</p>
+                  </div>
+
+                  {/* Formation Period */}
+                  <div className="text-xs text-gray-500 pt-2 border-t border-gray-100 dark:border-gray-700">
+                    Pattern formed {new Date(match.analysis.formationPeriod.start).toLocaleDateString()} 
+                    to {new Date(match.analysis.formationPeriod.end).toLocaleDateString()}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center text-gray-500 dark:text-gray-400">
+              {isScanning ? (
+                <div className="space-y-3">
+                  <svg className="animate-spin h-8 w-8 mx-auto" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  <p>Scanning markets for patterns...</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <svg className="h-8 w-8 mx-auto text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p>Select a pattern and click scan to begin analysis</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -367,60 +468,6 @@ export function PatternScannerView() {
           console.log('Added stock:', stock)
         }}
       />
-
-      {/* Main content area */}
-      <div className="col-span-3 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
-        <h2 className="text-2xl font-bold mb-6">Pattern Scanner</h2>
-        
-        {scanResults.length > 0 ? (
-          <div>
-            <h3 className="text-lg font-semibold mb-4">Scan Results</h3>
-            <div className="grid grid-cols-2 gap-4">
-              {scanResults.map((result) => (
-                <Link
-                  href={`/dashboard?symbol=${result.symbol}`}
-                  key={result.symbol}
-                  className="block p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
-                >
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <div className="font-medium text-lg">{result.symbol}</div>
-                      <div className="text-2xl font-bold mb-2">${result.price.toFixed(2)}</div>
-                      <div className="text-sm text-green-500">{result.confidence}% match</div>
-                    </div>
-                    <div className="text-sm px-2 py-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">
-                      View Details
-                    </div>
-                  </div>
-                  
-                  {/* Mini Chart */}
-                  <div 
-                    ref={setChartRef(result.symbol)}
-                    className="w-full h-[200px] mt-4"
-                  />
-                  
-                  {/* Pattern Indicators */}
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <div className="text-xs px-2 py-1 rounded-full bg-gray-200 dark:bg-gray-600">
-                      Volume: {(result.chartData[result.chartData.length - 1].volume / 1000000).toFixed(1)}M
-                    </div>
-                    <div className="text-xs px-2 py-1 rounded-full bg-gray-200 dark:bg-gray-600">
-                      30D High: ${Math.max(...result.chartData.map(d => d.high)).toFixed(2)}
-                    </div>
-                    <div className="text-xs px-2 py-1 rounded-full bg-gray-200 dark:bg-gray-600">
-                      30D Low: ${Math.min(...result.chartData.map(d => d.low)).toFixed(2)}
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
-        ) : !isScanning && (
-          <div className="text-center text-gray-500 dark:text-gray-400 py-12">
-            Select a pattern and sector to scan for matching stocks
-          </div>
-        )}
-      </div>
     </div>
   )
 }

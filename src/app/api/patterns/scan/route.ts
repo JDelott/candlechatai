@@ -2,6 +2,33 @@ import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import yahooFinance from 'yahoo-finance2'
 
+interface PatternMatch {
+  symbol: string
+  confidence: number
+  price: number
+  sector: string
+  patternComplete: boolean
+  volumeConfirms: boolean
+  analysis: {
+    description: string
+    keyLevels: {
+      support: number
+      resistance: number
+      breakoutTarget: number
+    }
+    formationPeriod: {
+      start: string
+      end: string
+    }
+    patternPoints: Array<{
+      date: string
+      price: number
+      significance: string
+    }>
+    volumeAnalysis: string
+  }
+}
+
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
 })
@@ -155,42 +182,96 @@ export async function POST(req: Request) {
     console.log(`Successfully fetched data for ${stocksData.length} stocks`)
 
     // Use Claude to analyze patterns
-    const response = await anthropic.messages.create({
-      model: "claude-3-sonnet-20240229",
-      max_tokens: 1024,
-      messages: [{
-        role: "user",
-        content: `You are a pattern analysis system that only outputs valid JSON.
+    const prompt = `You are a pattern analysis system that only outputs valid JSON.
+You specialize in identifying complex chart patterns including wedges, triangles, and head & shoulders formations.
 
 For the following stock data, analyze for ${pattern} patterns:
 ${JSON.stringify(stocksData)}
 
-Output a JSON array of matches in this exact format:
+Important Analysis Rules:
+1. Analyze ALL provided stocks for the ${pattern} pattern
+2. Include ANY stock that shows the pattern with confidence > 70%
+3. For sector "${sector}", return:
+   - ALL stocks if sector is "all"
+   - Only stocks from that specific sector otherwise
+4. Look for multiple instances of the pattern across different stocks
+5. Sort results by confidence score (highest first)
+6. Return at least 3-5 matches if they exist
+7. Maximum 10 matches in the results
+
+Return ONLY a clean JSON array in this EXACT format, with no additional text:
 [
   {
-    "symbol": "TICKER",
-    "confidence": 85,
+    "symbol": "TICKER1",
+    "confidence": 95,
     "price": 150.25,
-    "sector": "${sector}"
+    "sector": "${sector}",
+    "patternComplete": true,
+    "volumeConfirms": true,
+    "analysis": {
+      "description": "Clear ${pattern} pattern with strong confirmation: [specific details about formation]",
+      "keyLevels": {
+        "support": 145.50,
+        "resistance": 155.75,
+        "breakoutTarget": 165.00
+      },
+      "formationPeriod": {
+        "start": "2024-03-01",
+        "end": "2024-03-15"
+      },
+      "patternPoints": [
+        {
+          "date": "2024-03-01",
+          "price": 150.25,
+          "significance": "Pattern start"
+        },
+        {
+          "date": "2024-03-08",
+          "price": 152.50,
+          "significance": "Key reversal point"
+        },
+        {
+          "date": "2024-03-15",
+          "price": 155.75,
+          "significance": "Pattern completion"
+        }
+      ],
+      "volumeAnalysis": "Volume increased 25% during formation, confirming pattern validity"
+    }
+  },
+  {
+    "symbol": "TICKER2",
+    "confidence": 85,
+    // ... similar structure for other matches ...
   }
-]
+]`
 
-Include only stocks where you find the pattern with high confidence (>70%).
-Sort results by confidence descending.
-Respond with ONLY the JSON array, no other text.`
-      }]
+    const response = await anthropic.messages.create({
+      model: "claude-3-sonnet-20240229",
+      max_tokens: 4096, // Increased to handle multiple stocks
+      messages: [{
+        role: "user",
+        content: prompt
+      }],
+      temperature: 0
     })
 
     const content = response.content[0]
     if (!content || content.type !== 'text') {
-      throw new Error('Invalid response from Claude')
+      return NextResponse.json({ matches: [] })
     }
 
-    const matches = JSON.parse(content.text)
-    console.log(`Found ${matches.length} pattern matches`)
-    
-    return NextResponse.json({ matches })
-    
+    try {
+      const matches = JSON.parse(content.text.trim()) as PatternMatch[]
+      if (!Array.isArray(matches)) {
+        return NextResponse.json({ matches: [] })
+      }
+      return NextResponse.json({ matches })
+    } catch (error) {
+      console.error('Parse error:', error)
+      return NextResponse.json({ matches: [] })
+    }
+
   } catch (error) {
     console.error('Pattern scan error:', error)
     return NextResponse.json(
