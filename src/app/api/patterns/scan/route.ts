@@ -9,29 +9,55 @@ const anthropic = new Anthropic({
 // Define the shape of a Yahoo Finance quote result
 type YahooQuote = {
   symbol?: string;
+  regularMarketPrice?: number;
+  regularMarketChange?: number;
+  regularMarketChangePercent?: number;
+  regularMarketVolume?: number;
+  marketCap?: number;
   shortName?: string;
   longName?: string;
-  quoteType?: string;
-  score?: number;
-  typeDisp?: string;
-  exchDisp?: string;
   sector?: string;
-  sectorDisp?: string;
   industry?: string;
-  industryDisp?: string;
 }
 
-// Simple sector queries
+// Updated sector queries with more specific search terms
 const SECTOR_QUERIES = {
-  technology: 'sector:Technology',
-  finance: 'sector:"Financial Services"',
-  healthcare: 'sector:Healthcare',
-  consumer: 'sector:Consumer',
-  industrial: 'sector:Industrial',
-  energy: 'sector:Energy',
-  materials: 'sector:Materials',
-  utilities: 'sector:Utilities',
-  realestate: 'sector:"Real Estate"'
+  technology: {
+    query: 'sector:"Technology"',
+    defaultStocks: ['AAPL', 'MSFT', 'GOOGL', 'META', 'NVDA', 'CRM', 'ADBE', 'INTC', 'AMD', 'CSCO']
+  },
+  finance: {
+    query: 'sector:"Financial Services"',
+    defaultStocks: ['JPM', 'BAC', 'WFC', 'GS', 'MS', 'BLK', 'C', 'SCHW', 'AXP', 'V']
+  },
+  healthcare: {
+    query: 'sector:"Healthcare"',
+    defaultStocks: ['JNJ', 'UNH', 'PFE', 'ABBV', 'MRK', 'TMO', 'ABT', 'DHR', 'BMY', 'LLY']
+  },
+  consumer: {
+    query: 'sector:"Consumer Cyclical" OR sector:"Consumer Defensive"',
+    defaultStocks: ['AMZN', 'HD', 'NKE', 'MCD', 'SBUX', 'TGT', 'WMT', 'PG', 'KO', 'PEP']
+  },
+  industrial: {
+    query: 'sector:"Industrials"',
+    defaultStocks: ['BA', 'HON', 'UPS', 'CAT', 'DE', 'LMT', 'GE', 'MMM', 'RTX', 'UNP']
+  },
+  energy: {
+    query: 'sector:"Energy"',
+    defaultStocks: ['XOM', 'CVX', 'COP', 'SLB', 'EOG', 'PXD', 'MPC', 'PSX', 'VLO', 'OXY']
+  },
+  materials: {
+    query: 'sector:"Basic Materials"',
+    defaultStocks: ['LIN', 'APD', 'ECL', 'SHW', 'FCX', 'NEM', 'DOW', 'NUE', 'CTVA', 'VMC']
+  },
+  utilities: {
+    query: 'sector:"Utilities"',
+    defaultStocks: ['NEE', 'DUK', 'SO', 'D', 'AEP', 'EXC', 'SRE', 'XEL', 'PEG', 'WEC']
+  },
+  realestate: {
+    query: 'sector:"Real Estate"',
+    defaultStocks: ['PLD', 'AMT', 'CCI', 'EQIX', 'PSA', 'O', 'DLR', 'WELL', 'AVB', 'EQR']
+  }
 } as const
 
 export async function POST(req: Request) {
@@ -45,46 +71,47 @@ export async function POST(req: Request) {
       )
     }
 
-    // Get stocks from Yahoo Finance based on sector
     let symbols: string[] = []
     
     try {
-      // First try sector-based search
-      const query = sector === 'all' 
-        ? '' // Empty query returns popular stocks
-        : SECTOR_QUERIES[sector as keyof typeof SECTOR_QUERIES] || ''
-      
-      const searchResults = await yahooFinance.search(query, {
-        newsCount: 0,
-        quotesCount: 100,
-        enableFuzzyQuery: false
-      })
+      if (sector === 'all') {
+        // Get top stocks from each sector
+        symbols = Object.values(SECTOR_QUERIES)
+          .flatMap(sectorInfo => sectorInfo.defaultStocks)
+          .slice(0, 50) // Limit to top 50 stocks across sectors
+      } else {
+        const sectorInfo = SECTOR_QUERIES[sector as keyof typeof SECTOR_QUERIES]
+        if (!sectorInfo) {
+          throw new Error(`Invalid sector: ${sector}`)
+        }
 
-      if (searchResults.quotes && searchResults.quotes.length > 0) {
-        symbols = (searchResults.quotes as YahooQuote[])
-          .filter(quote => quote?.symbol && typeof quote.symbol === 'string')
-          .map(quote => quote.symbol!)
-          .filter(symbol => symbol.length > 0)
-      }
-
-      // If sector search returns no results, fall back to top stocks
-      if (symbols.length === 0) {
-        console.log('Falling back to top stocks search')
-        const topStocksResults = await yahooFinance.search('', {
+        // Try to get stocks via search first
+        const searchResults = await yahooFinance.search(sectorInfo.query, {
           newsCount: 0,
-          quotesCount: 50,
+          quotesCount: 100,
           enableFuzzyQuery: false
         })
 
-        symbols = (topStocksResults.quotes as YahooQuote[])
-          .filter(quote => quote?.symbol && typeof quote.symbol === 'string')
-          .map(quote => quote.symbol!)
-          .filter(symbol => symbol.length > 0)
+        if (searchResults.quotes && searchResults.quotes.length > 0) {
+          symbols = (searchResults.quotes as YahooQuote[])
+            .filter(quote => quote?.symbol && typeof quote.symbol === 'string')
+            .map(quote => quote.symbol!)
+            .filter(symbol => symbol.length > 0)
+        }
+
+        // If search fails or returns no results, use default stocks for the sector
+        if (symbols.length === 0) {
+          console.log(`Using default stocks for sector: ${sector}`)
+          symbols = [...sectorInfo.defaultStocks]
+        }
       }
     } catch (error) {
-      console.error('Yahoo Finance search error:', error)
-      // Continue with default symbols if search fails
-      symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA']
+      console.error('Stock search error:', error)
+      // Use default stocks for the selected sector or general defaults
+      const defaults = sector === 'all' || !SECTOR_QUERIES[sector as keyof typeof SECTOR_QUERIES]
+        ? ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA'] as string[]
+        : [...SECTOR_QUERIES[sector as keyof typeof SECTOR_QUERIES].defaultStocks]
+      symbols = defaults
     }
 
     if (symbols.length === 0) {
@@ -94,7 +121,7 @@ export async function POST(req: Request) {
       )
     }
 
-    console.log(`Analyzing ${symbols.length} symbols for ${pattern} pattern`)
+    console.log(`Analyzing ${symbols.length} symbols for ${pattern} pattern in ${sector} sector`)
 
     // Fetch historical data for pattern analysis
     const stockDataPromises = symbols.map(async (symbol) => {
