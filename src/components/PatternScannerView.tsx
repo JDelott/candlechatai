@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { createChart, ColorType, IChartApi } from 'lightweight-charts'
 import Link from 'next/link'
+import { useDebounce } from '@/hooks/useDebounce'
+import { SectorStockManager } from './SectorStockManager'
 
 type PatternType = {
   name: string
@@ -24,10 +26,9 @@ type ScanResult = {
   chartData: ChartData[]
 }
 
-type ApiScanMatch = {
+type SearchResult = {
   symbol: string
-  confidence: number
-  price: number
+  name: string
 }
 
 // Using the existing patterns from PatternScanner.tsx
@@ -59,12 +60,68 @@ const CANDLESTICK_PATTERNS: PatternType[] = [
   }
 ]
 
+const MARKET_SECTORS = [
+  { id: 'all', name: 'All Sectors' },
+  { id: 'technology', name: 'Technology' },
+  { id: 'finance', name: 'Financial Services' },
+  { id: 'healthcare', name: 'Healthcare' },
+  { id: 'consumer', name: 'Consumer' },
+  { id: 'industrial', name: 'Industrial' },
+  { id: 'energy', name: 'Energy' },
+  { id: 'materials', name: 'Materials' },
+  { id: 'utilities', name: 'Utilities' },
+  { id: 'realestate', name: 'Real Estate' }
+] as const
+
+type SectorId = typeof MARKET_SECTORS[number]['id']
+
 export function PatternScannerView() {
   const [selectedPattern, setSelectedPattern] = useState('')
   const [isScanning, setIsScanning] = useState(false)
   const [scanResults, setScanResults] = useState<ScanResult[]>([])
   const [activeCategory, setActiveCategory] = useState<'bullish' | 'bearish' | 'continuation' | 'all'>('all')
+  const [selectedSector, setSelectedSector] = useState<SectorId>('all')
   const chartRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  
+  // Stock search states
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [selectedStock, setSelectedStock] = useState<string>('')
+  const debouncedSearch = useDebounce(searchQuery, 300)
+
+  // Sector stock manager state
+  const [isSectorManagerOpen, setIsSectorManagerOpen] = useState(false)
+
+  // Search for stocks
+  useEffect(() => {
+    const searchStocks = async () => {
+      if (!debouncedSearch) {
+        setSearchResults([])
+        return
+      }
+
+      setIsSearching(true)
+      try {
+        const response = await fetch(`/api/stock/search?q=${debouncedSearch}`)
+        if (!response.ok) throw new Error('Search failed')
+        const data = await response.json()
+        setSearchResults(data.results)
+      } catch (error) {
+        console.error('Stock search error:', error)
+      } finally {
+        setIsSearching(false)
+      }
+    }
+
+    searchStocks()
+  }, [debouncedSearch])
+
+  const handleSelectStock = (result: SearchResult) => {
+    setSelectedStock(result.symbol)
+    setSearchQuery('')
+    setSearchResults([])
+  }
 
   const handleScan = async () => {
     if (!selectedPattern) return
@@ -73,17 +130,20 @@ export function PatternScannerView() {
       const response = await fetch('/api/patterns/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pattern: selectedPattern })
+        body: JSON.stringify({ 
+          pattern: selectedPattern,
+          sector: selectedSector
+        })
       })
       
       if (!response.ok) throw new Error('Scan failed')
-      const data: { matches: ApiScanMatch[] } = await response.json()
+      const data = await response.json()
       
       // Fetch chart data for each match
       const resultsWithCharts = await Promise.all(
-        data.matches.map(async (match) => {
+        data.matches.map(async (match: { symbol: string }) => {
           const chartResponse = await fetch(`/api/stock/history?symbol=${match.symbol}`)
-          const chartData: ChartData[] = await chartResponse.json()
+          const chartData = await chartResponse.json()
           return {
             ...match,
             chartData: chartData.slice(-30) // Last 30 days
@@ -175,8 +235,87 @@ export function PatternScannerView() {
           </div>
         </div>
 
+        {/* Updated Stock Search with loading indicator */}
+        <div className="space-y-2">
+          <label className="block text-sm font-medium mb-2">Search Stock</label>
+          <div className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search stocks..."
+              className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg"
+            />
+            
+            {isSearching && (
+              <div className="absolute right-3 top-2.5">
+                <svg className="animate-spin h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              </div>
+            )}
+            
+            {/* Search Results Dropdown */}
+            {searchResults.length > 0 && (
+              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-60 overflow-auto">
+                {searchResults.map((result) => (
+                  <button
+                    key={result.symbol}
+                    onClick={() => handleSelectStock(result)}
+                    className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex justify-between items-center"
+                  >
+                    <span className="font-medium">{result.symbol}</span>
+                    <span className="text-sm text-gray-500">{result.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Selected Stock */}
+          {selectedStock && (
+            <div className="p-2 bg-gray-50 dark:bg-gray-700 rounded-lg flex justify-between items-center">
+              <span>{selectedStock}</span>
+              <button
+                onClick={() => setSelectedStock('')}
+                className="text-red-500 hover:text-red-600"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Market Sectors with View/Edit Button */}
         <div>
-          <label className="block text-sm font-medium mb-2">Select Pattern</label>
+          <div className="flex justify-between items-center mb-2">
+            <label className="block text-sm font-medium">Market Sector</label>
+            <button
+              onClick={() => setIsSectorManagerOpen(true)}
+              className="text-sm text-blue-500 hover:text-blue-600"
+            >
+              View/Edit Stocks
+            </button>
+          </div>
+          <select
+            value={selectedSector}
+            onChange={(e) => setSelectedSector(e.target.value as SectorId)}
+            className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg"
+          >
+            {MARKET_SECTORS.map((sector) => (
+              <option key={sector.id} value={sector.id}>
+                {sector.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Pattern Selection */}
+        <div>
+          <label className="block text-sm font-medium mb-2">Candlestick Pattern</label>
           <select
             value={selectedPattern}
             onChange={(e) => setSelectedPattern(e.target.value)}
@@ -202,30 +341,37 @@ export function PatternScannerView() {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
               </svg>
-              <span>Scanning...</span>
+              <span>Scanning Market...</span>
             </div>
           ) : (
-            'Scan Markets'
+            'Find Matching Patterns'
           )}
         </button>
+
+        {selectedPattern && (
+          <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+            <h3 className="font-medium mb-2">{selectedPattern}</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              {CANDLESTICK_PATTERNS.find(p => p.name === selectedPattern)?.description}
+            </p>
+          </div>
+        )}
       </div>
+
+      {/* Sector Stock Manager Modal */}
+      <SectorStockManager
+        isOpen={isSectorManagerOpen}
+        onClose={() => setIsSectorManagerOpen(false)}
+        onAddStock={(stock) => {
+          // Handle adding new stock to sector
+          console.log('Added stock:', stock)
+        }}
+      />
 
       {/* Main content area */}
       <div className="col-span-3 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
         <h2 className="text-2xl font-bold mb-6">Pattern Scanner</h2>
         
-        {selectedPattern && (
-          <div className="mb-6">
-            <h3 className="text-lg font-semibold mb-2">Selected Pattern</h3>
-            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-              <div className="font-medium">{selectedPattern}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                {CANDLESTICK_PATTERNS.find(p => p.name === selectedPattern)?.description}
-              </div>
-            </div>
-          </div>
-        )}
-
         {scanResults.length > 0 ? (
           <div>
             <h3 className="text-lg font-semibold mb-4">Scan Results</h3>
@@ -271,7 +417,7 @@ export function PatternScannerView() {
           </div>
         ) : !isScanning && (
           <div className="text-center text-gray-500 dark:text-gray-400 py-12">
-            Select a pattern and click &quot;Scan Markets&quot; to find matching stocks
+            Select a pattern and sector to scan for matching stocks
           </div>
         )}
       </div>

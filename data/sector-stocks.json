@@ -1,0 +1,251 @@
+{
+  "technology": [
+    { 
+      "symbol": "AAPL", 
+      "name": "Apple Inc.", 
+      "sector": "technology",
+      "subsector": "consumer_electronics",
+      "marketCap": "large",
+      "description": "Consumer electronics, software, and services company",
+      "products": ["iPhone", "Mac", "iPad", "Wearables", "Services"]
+    },
+    { 
+      "symbol": "MSFT", 
+      "name": "Microsoft Corporation", 
+      "sector": "technology",
+      "subsector": "software",
+      "marketCap": "large",
+      "description": "Enterprise software, cloud computing, and hardware",
+      "products": ["Azure", "Windows", "Office", "Xbox", "Surface"]
+    },
+    {
+      "symbol": "GOOGL",
+      "name": "Alphabet Inc.",
+      "sector": "technology",
+      "subsector": "internet_services",
+      "marketCap": "large",
+      "description": "Internet services, software, and AI technology",
+      "products": ["Search", "Android", "Cloud", "YouTube", "Ads"]
+    }
+  ],
+  "finance": [
+    {
+      "symbol": "JPM",
+      "name": "JPMorgan Chase & Co.",
+      "sector": "finance",
+      "subsector": "banking",
+      "marketCap": "large",
+      "description": "Global banking and financial services",
+      "products": ["Investment Banking", "Consumer Banking", "Asset Management"]
+    },
+    {
+      "symbol": "GS",
+      "name": "Goldman Sachs Group Inc.",
+      "sector": "finance",
+      "subsector": "investment_banking",
+      "marketCap": "large",
+      "description": "Investment banking and securities",
+      "products": ["Investment Banking", "Trading", "Asset Management"]
+    }
+  ],
+  "healthcare": [
+    {
+      "symbol": "JNJ",
+      "name": "Johnson & Johnson",
+      "sector": "healthcare",
+      "subsector": "pharmaceuticals",
+      "marketCap": "large",
+      "description": "Healthcare, pharmaceutical and consumer packaged goods",
+      "products": ["Pharmaceuticals", "Medical Devices", "Consumer Health"]
+    },
+    {
+      "symbol": "PFE",
+      "name": "Pfizer Inc.",
+      "sector": "healthcare",
+      "subsector": "pharmaceuticals",
+      "marketCap": "large",
+      "description": "Global pharmaceutical company",
+      "products": ["Vaccines", "Medicines", "Consumer Healthcare"]
+    }
+  ],
+  "consumer": [
+    {
+      "symbol": "AMZN",
+      "name": "Amazon.com Inc.",
+      "sector": "consumer",
+      "subsector": "e_commerce",
+      "marketCap": "large",
+      "description": "E-commerce, cloud computing, and digital streaming",
+      "products": ["Online Retail", "AWS", "Prime", "Devices"]
+    },
+    {
+      "symbol": "WMT",
+      "name": "Walmart Inc.",
+      "sector": "consumer",
+      "subsector": "retail",
+      "marketCap": "large",
+      "description": "Multinational retail corporation",
+      "products": ["Retail Stores", "E-commerce", "Wholesale"]
+    }
+  ],
+  "industrial": [
+    {
+      "symbol": "CAT",
+      "name": "Caterpillar Inc.",
+      "sector": "industrial",
+      "subsector": "machinery",
+      "marketCap": "large",
+      "description": "Construction and mining equipment manufacturer",
+      "products": ["Construction Equipment", "Mining Equipment", "Engines"]
+    },
+    {
+      "symbol": "BA",
+      "name": "Boeing Company",
+      "sector": "industrial",
+      "subsector": "aerospace",
+      "marketCap": "large",
+      "description": "Aerospace and defense company",
+      "products": ["Commercial Aircraft", "Defense Systems", "Space Systems"]
+    }
+  ],
+  "energy": [
+    {
+      "symbol": "XOM",
+      "name": "Exxon Mobil Corporation",
+      "sector": "energy",
+      "subsector": "oil_gas",
+      "marketCap": "large",
+      "description": "Multinational oil and gas corporation",
+      "products": ["Oil", "Natural Gas", "Petrochemicals"]
+    },
+    {
+      "symbol": "CVX",
+      "name": "Chevron Corporation",
+      "sector": "energy",
+      "subsector": "oil_gas",
+      "marketCap": "large",
+      "description": "Multinational energy corporation",
+      "products": ["Oil", "Natural Gas", "Renewable Energy"]
+    }
+  ],
+  "materials": [
+    {
+      "symbol": "LIN",
+      "name": "Linde plc",
+      "sector": "materials",
+      "subsector": "chemicals",
+      "marketCap": "large",
+      "description": "Industrial gases and engineering company",
+      "products": ["Industrial Gases", "Process Plants", "Healthcare"]
+    },
+    {
+      "symbol": "FCX",
+      "name": "Freeport-McMoRan Inc.",
+      "sector": "materials",
+      "subsector": "mining",
+      "marketCap": "large",
+      "description": "Mining company",
+      "products": ["Copper", "Gold", "Molybdenum"]
+    }
+  ],
+  "utilities": [
+    {
+      "symbol": "NEE",
+      "name": "NextEra Energy Inc.",
+      "sector": "utilities",
+      "subsector": "electric",
+      "marketCap": "large",
+      "description": "Electric power and energy infrastructure company",
+      "products": ["Electric Utilities", "Renewable Energy", "Energy Storage"]
+    },
+    {
+      "symbol": "DUK",
+      "name": "Duke Energy Corporation",
+      "sector": "utilities",
+      "subsector": "electric",
+      "marketCap": "large",
+      "description": "Electric power company",
+      "products": ["Electric Utilities", "Natural Gas", "Infrastructure"]
+    }
+  ],
+  "realestate": [
+    {
+      "symbol": "AMT",
+      "name": "American Tower Corporation",
+      "sector": "realestate",
+      "subsector": "reits",
+      "marketCap": "large",
+      "description": "Real estate investment trust and wireless infrastructure",
+      "products": ["Wireless Towers", "Fiber Networks", "Data Centers"]
+    },
+    {
+      "symbol": "PLD",
+      "name": "Prologis Inc.",
+      "sector": "realestate",
+      "subsector": "reits",
+      "marketCap": "large",
+      "description": "Logistics real estate company",
+      "products": ["Industrial Real Estate", "Logistics Facilities", "Warehouses"]
+    }
+  ],
+  "crypto": [
+    {
+      "symbol": "BTC-USD",
+      "name": "Bitcoin USD",
+      "sector": "crypto",
+      "subsector": "cryptocurrency",
+      "marketCap": "large",
+      "description": "Decentralized digital currency",
+      "products": ["Digital Currency", "Store of Value", "Payment System"]
+    },
+    {
+      "symbol": "ETH-USD",
+      "name": "Ethereum USD",
+      "sector": "crypto",
+      "subsector": "cryptocurrency",
+      "marketCap": "large",
+      "description": "Decentralized computing platform",
+      "products": ["Smart Contracts", "DeFi", "NFTs"]
+    }
+  ],
+  "etf": [
+    {
+      "symbol": "SPY",
+      "name": "SPDR S&P 500 ETF Trust",
+      "sector": "etf",
+      "subsector": "broad_market",
+      "marketCap": "large",
+      "description": "Tracks the S&P 500 Index",
+      "products": ["Index Fund", "Large Cap Exposure", "Diversification"]
+    },
+    {
+      "symbol": "QQQ",
+      "name": "Invesco QQQ Trust",
+      "sector": "etf",
+      "subsector": "technology",
+      "marketCap": "large",
+      "description": "Tracks the Nasdaq-100 Index",
+      "products": ["Tech Exposure", "Growth Stocks", "Innovation"]
+    }
+  ],
+  "forex": [
+    {
+      "symbol": "EUR=X",
+      "name": "Euro/US Dollar",
+      "sector": "forex",
+      "subsector": "currency_pairs",
+      "marketCap": "large",
+      "description": "Euro to US Dollar exchange rate",
+      "products": ["Currency Exchange", "Forex Trading", "International Trade"]
+    },
+    {
+      "symbol": "JPY=X",
+      "name": "US Dollar/Japanese Yen",
+      "sector": "forex",
+      "subsector": "currency_pairs",
+      "marketCap": "large",
+      "description": "US Dollar to Japanese Yen exchange rate",
+      "products": ["Currency Exchange", "Forex Trading", "International Trade"]
+    }
+  ]
+} 
