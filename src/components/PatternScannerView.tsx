@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { createChart, IChartApi } from 'lightweight-charts'
+import { createChart, IChartApi, ColorType } from 'lightweight-charts'
 import { SectorStockManager } from './SectorStockManager'
 
 type PatternType = {
@@ -30,7 +30,7 @@ interface PatternMatch {
   sector: string
   patternComplete: boolean
   volumeConfirms: boolean
-  chartData: ChartDataPoint[]
+  chartData?: ChartDataPoint[]
   analysis: {
     description: string
     keyLevels: {
@@ -46,8 +46,6 @@ interface PatternMatch {
     volumeAnalysis: string
   }
 }
-
-
 
 // Using the existing patterns from PatternScanner.tsx
 const CANDLESTICK_PATTERNS: PatternType[] = [
@@ -132,6 +130,7 @@ export function PatternScannerView() {
   const [isSectorManagerOpen, setIsSectorManagerOpen] = useState(false)
   const chartContainers = useRef<{ [key: string]: HTMLDivElement | null }>({})
   const charts = useRef<{ [key: string]: IChartApi }>({})
+  const chartRefs = useRef<Map<string, IChartApi>>(new Map())
   
   const filteredPatterns = useMemo(() => {
     if (activeCategory === 'all') return CANDLESTICK_PATTERNS
@@ -157,7 +156,22 @@ export function PatternScannerView() {
       }
 
       const data = await response.json()
-      setScanResults(data.matches)
+      
+      // For each match, fetch historical data
+      const matchesWithChartData = await Promise.all(
+        data.matches.map(async (match: PatternMatch) => {
+          try {
+            const historyResponse = await fetch(`/api/stock/history?symbol=${match.symbol}`)
+            const chartData = await historyResponse.json()
+            return { ...match, chartData }
+          } catch (error) {
+            console.error(`Error fetching history for ${match.symbol}:`, error)
+            return match
+          }
+        })
+      )
+
+      setScanResults(matchesWithChartData)
     } catch (error) {
       console.error('Pattern scan error:', error)
     } finally {
@@ -165,10 +179,52 @@ export function PatternScannerView() {
     }
   }
 
-  // Function to set chart container reference
-  const setChartRef = (symbol: string) => (node: HTMLDivElement | null) => {
-    if (node !== null) {
-      chartContainers.current[symbol] = node
+  const setChartRef = (symbol: string) => (container: HTMLDivElement | null) => {
+    if (container && !chartRefs.current.has(symbol)) {
+      container.innerHTML = ''
+      
+      const chart = createChart(container, {
+        layout: {
+          background: { type: ColorType.Solid, color: '#ffffff' },
+          textColor: '#333',
+        },
+        grid: {
+          vertLines: { color: '#f0f0f0' },
+          horzLines: { color: '#f0f0f0' },
+        },
+        width: container.clientWidth,
+        height: container.clientHeight,
+      })
+
+      const candlestickSeries = chart.addCandlestickSeries({
+        upColor: '#26a69a',
+        downColor: '#ef5350',
+        borderVisible: false,
+        wickUpColor: '#26a69a',
+        wickDownColor: '#ef5350'
+      })
+
+      // Find the match data for this symbol
+      const matchData = scanResults.find(result => result.symbol === symbol)
+      
+      if (matchData?.chartData) {
+        candlestickSeries.setData(matchData.chartData)
+        chart.timeScale().fitContent()
+      }
+
+      chartRefs.current.set(symbol, chart)
+
+      // Setup resize observer
+      const resizeObserver = new ResizeObserver(entries => {
+        if (entries[0].target === container) {
+          chart.applyOptions({
+            width: container.clientWidth,
+            height: container.clientHeight,
+          })
+        }
+      })
+
+      resizeObserver.observe(container)
     }
   }
 
@@ -235,6 +291,15 @@ export function PatternScannerView() {
       charts.current = {}
     }
   }, [scanResults])
+
+  // Cleanup charts when component unmounts
+  useEffect(() => {
+    const charts = chartRefs.current;
+    return () => {
+      charts.forEach(chart => chart.remove())
+      charts.clear()
+    }
+  }, [])
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 py-6">
@@ -375,7 +440,10 @@ export function PatternScannerView() {
                 </div>
 
                 {/* Chart */}
-                <div ref={setChartRef(match.symbol)} className="w-full h-[250px]" />
+                <div 
+                  ref={setChartRef(match.symbol)} 
+                  className="w-full h-[250px] border-t border-gray-200 dark:border-gray-700"
+                />
 
                 {/* Analysis */}
                 <div className="p-6 space-y-4">
